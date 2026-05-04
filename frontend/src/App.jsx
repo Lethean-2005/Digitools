@@ -194,6 +194,14 @@ const IconStack = (p) => (
     <path d="M4 16l8 4l8 -4" />
   </Icon>
 );
+const IconQR = (p) => (
+  <Icon {...p}>
+    <rect x="3" y="3" width="7" height="7" rx="1" />
+    <rect x="14" y="3" width="7" height="7" rx="1" />
+    <rect x="3" y="14" width="7" height="7" rx="1" />
+    <path d="M14 14h3M20 14v3M14 17v3M17 17h3M14 21h3" />
+  </Icon>
+);
 
 /* ── App shell ───────────────────────────────────────── */
 const TOOLS = [
@@ -201,6 +209,7 @@ const TOOLS = [
   { id: 'media',   label: 'Media Download',   desc: 'Download video/audio from URL', Icon: IconDownload },
   { id: 'remove',  label: 'Remove Background', desc: 'Cut out the background of any image', Icon: IconScissors },
   { id: 'emoji',   label: 'Create Emoji',     desc: 'Make a 128/256/512 px emoji from an image', Icon: IconSparkles },
+  { id: 'qr',      label: 'QR Generator',     desc: 'Generate a QR code from text or URL', Icon: IconQR },
 ];
 
 const SIDEBAR_GROUPS = [
@@ -238,6 +247,16 @@ const SIDEBAR_GROUPS = [
           { id: 'emoji',  label: 'Create Emoji' },
         ],
       },
+      {
+        type: 'group',
+        id: 'gen-group',
+        label: 'Generators',
+        Icon: IconSparkles,
+        badge: '1',
+        children: [
+          { id: 'qr', label: 'QR Generator' },
+        ],
+      },
       { type: 'item', id: 'likes', label: 'Likes', Icon: IconHeart, soon: true },
     ],
   },
@@ -252,18 +271,64 @@ const SIDEBAR_GROUPS = [
   },
 ];
 
+const TAB_META = {
+  pdf:    { title: 'PDF → Word',       breadcrumb: ['Tools', 'Documents'] },
+  media:  { title: 'Media Download',   breadcrumb: ['Tools', 'Media'] },
+  remove: { title: 'Remove Background', breadcrumb: ['Tools', 'Images'] },
+  emoji:  { title: 'Create Emoji',     breadcrumb: ['Tools', 'Images'] },
+  qr:     { title: 'QR Generator',     breadcrumb: ['Tools', 'Generators'] },
+};
+
 export default function App() {
   const [tab, setTab] = useState('pdf');
+  const [sbOpen, setSbOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
+  const meta = TAB_META[tab] || { title: '', breadcrumb: [] };
+
+  useEffect(() => {
+    const apply = () => {
+      const m = window.innerWidth < 768;
+      setIsMobile(m);
+      // Auto-collapse on first mobile resize
+      if (m) setSbOpen(false);
+    };
+    apply();
+    window.addEventListener('resize', apply);
+    return () => window.removeEventListener('resize', apply);
+  }, []);
+
+  const closeOnMobile = () => { if (isMobile) setSbOpen(false); };
+
   return (
     <div className="layout">
-      <Sidebar tab={tab} setTab={setTab} />
+      {isMobile && sbOpen && (
+        <div className="sb-backdrop" onClick={() => setSbOpen(false)} />
+      )}
+      <Sidebar
+        tab={tab}
+        setTab={(id) => { setTab(id); closeOnMobile(); }}
+        sbOpen={sbOpen}
+        onClose={() => setSbOpen(false)}
+      />
       <main className="page">
-        <section className="tool-section">
-          <div className="card">
-            {tab === 'pdf'    && <UploadPanel />}
-            {tab === 'media'  && <MediaPanel />}
-            {tab === 'remove' && <ImagePanel mode="remove" />}
-            {tab === 'emoji'  && <ImagePanel mode="emoji" />}
+        <Topbar meta={meta} sbOpen={sbOpen} onToggle={() => setSbOpen((v) => !v)} />
+        <section className="workspace">
+          <header className="ws-head">
+            <p className="ws-crumbs">
+              {meta.breadcrumb.map((c, i) => (
+                <span key={c}>{i > 0 && <span className="ws-sep">/</span>}{c}</span>
+              ))}
+            </p>
+            <h1 className="ws-title">{meta.title}</h1>
+          </header>
+          <div className="ws-card-wrap">
+            <div className="card">
+              {tab === 'pdf'    && <UploadPanel />}
+              {tab === 'media'  && <MediaPanel />}
+              {tab === 'remove' && <ImagePanel mode="remove" />}
+              {tab === 'emoji'  && <ImagePanel mode="emoji" />}
+              {tab === 'qr'     && <QRPanel />}
+            </div>
           </div>
         </section>
       </main>
@@ -271,7 +336,37 @@ export default function App() {
   );
 }
 
-function Sidebar({ tab, setTab }) {
+function Topbar({ meta, sbOpen, onToggle }) {
+  return (
+    <header className="topbar">
+      <button
+        type="button"
+        className="ghost-btn topbar-toggle"
+        onClick={onToggle}
+        aria-label={sbOpen ? 'Hide sidebar' : 'Show sidebar'}
+        aria-pressed={sbOpen}
+      ><IconMenu size={20} /></button>
+      <div className="topbar-title">{meta.title}</div>
+      <div className="topbar-search">
+        <SearchGlyph />
+        <input placeholder="Search tools, files…" />
+      </div>
+      <button className="ghost-btn" aria-label="Help"><IconHelp size={18} /></button>
+      <div className="topbar-avatar" aria-hidden>D</div>
+    </header>
+  );
+}
+
+function SearchGlyph() {
+  return (
+    <Icon size={16} strokeWidth={1.75}>
+      <circle cx="10" cy="10" r="7" />
+      <path d="m20 20 -3.5 -3.5" />
+    </Icon>
+  );
+}
+
+function Sidebar({ tab, setTab, sbOpen, onClose }) {
   // figure out which group contains the active tab so it's expanded by default
   const groupHasTab = (g) =>
     g.type === 'group' && g.children.some((c) => (c.target || c.id) === tab);
@@ -285,11 +380,19 @@ function Sidebar({ tab, setTab }) {
   const toggle = (id) => setExpanded((p) => ({ ...p, [id]: !p[id] }));
 
   return (
-    <aside className="sidebar">
-      <a className="sb-brand" href="/" aria-label="Digitools home">
-        <span className="sb-brand-mark"><IconTool size={20} strokeWidth={2.25} /></span>
-        <span className="sb-brand-text">Digitools</span>
-      </a>
+    <aside className={`sidebar${sbOpen ? ' open' : ' closed'}`}>
+      <div className="sb-top">
+        <a className="sb-brand" href="/" aria-label="Digitools home">
+          <span className="sb-brand-mark"><IconTool size={20} strokeWidth={2.25} /></span>
+          <span className="sb-brand-text">Digitools</span>
+        </a>
+        <button
+          type="button"
+          className="ghost-btn sb-close"
+          onClick={onClose}
+          aria-label="Close menu"
+        ><IconX size={18} /></button>
+      </div>
       {SIDEBAR_GROUPS.map((section) => (
         <div className="sb-section" key={section.title}>
           <p className="sb-heading">{section.title}</p>
@@ -618,6 +721,153 @@ function ImagePanel({ mode }) {
           )}
         </div>
       )}
+    </>
+  );
+}
+
+/* ── QR Generator ─────────────────────────────────────── */
+function QRPanel() {
+  const [text, setText] = useState('https://digitools.app');
+  const [size, setSize] = useState(512);
+  const [fg, setFg] = useState('#0f172a');
+  const [bg, setBg] = useState('#ffffff');
+  const [transparent, setTransparent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [outUrl, setOutUrl] = useState(null);
+
+  useEffect(() => () => { if (outUrl) URL.revokeObjectURL(outUrl); }, [outUrl]);
+
+  const generate = async () => {
+    if (!text.trim()) return;
+    setBusy(true); setError('');
+    try {
+      const r = await fetch(`${API_BASE}/qr`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          size,
+          fg,
+          bg: transparent ? 'transparent' : bg,
+        }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.detail || `Failed (${r.status})`);
+      }
+      const blob = await r.blob();
+      if (outUrl) URL.revokeObjectURL(outUrl);
+      setOutUrl(URL.createObjectURL(blob));
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const download = () => {
+    if (!outUrl) return;
+    const a = document.createElement('a');
+    a.href = outUrl;
+    a.download = `qr-${size}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  return (
+    <>
+      <div className="head">
+        <div className="head-icon"><IconQR size={20} strokeWidth={2.25} /></div>
+        <div className="head-text">
+          <h2>QR Generator</h2>
+          <p>Turn any text or URL into a QR code.</p>
+        </div>
+        <button className="ghost-btn" aria-label="Help"><IconHelp size={16} /></button>
+      </div>
+
+      <label className="qr-field">
+        <span className="qr-label">Text or URL</span>
+        <textarea
+          rows={2}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="https://example.com"
+          className="qr-textarea"
+          maxLength={4000}
+        />
+      </label>
+
+      <div className="qr-row">
+        <label className="qr-field">
+          <span className="qr-label">Foreground</span>
+          <span className="qr-color">
+            <input type="color" value={fg} onChange={(e) => setFg(e.target.value)} />
+            <span>{fg.toUpperCase()}</span>
+          </span>
+        </label>
+        <label className="qr-field">
+          <span className="qr-label">Background</span>
+          <span className={`qr-color${transparent ? ' is-disabled' : ''}`}>
+            <input
+              type="color"
+              value={bg}
+              onChange={(e) => setBg(e.target.value)}
+              disabled={transparent}
+            />
+            <span>{transparent ? 'transparent' : bg.toUpperCase()}</span>
+          </span>
+        </label>
+      </div>
+
+      <label className="qr-check">
+        <input
+          type="checkbox"
+          checked={transparent}
+          onChange={(e) => setTransparent(e.target.checked)}
+        />
+        <span>Transparent background</span>
+      </label>
+
+      <div className="seg" style={{ marginTop: 12 }}>
+        {[128, 256, 512, 1024].map((s) => (
+          <button
+            key={s}
+            className={`seg-opt${size === s ? ' active' : ''}`}
+            onClick={() => setSize(s)}
+          >
+            {s}px
+          </button>
+        ))}
+      </div>
+
+      {error && <div className="msg-err">{error}</div>}
+
+      {outUrl && (
+        <div className="qr-preview">
+          <div className="qr-thumb"><img src={outUrl} alt="QR preview" /></div>
+        </div>
+      )}
+
+      <div className="img-actions">
+        {outUrl && (
+          <button className="browse-btn" onClick={() => { URL.revokeObjectURL(outUrl); setOutUrl(null); }} disabled={busy}>
+            Clear
+          </button>
+        )}
+        {outUrl ? (
+          <button className="primary-btn" onClick={download}>
+            <IconDownload size={14} /> Download PNG
+          </button>
+        ) : (
+          <button className="primary-btn" onClick={generate} disabled={busy || !text.trim()}>
+            {busy
+              ? <><IconLoader size={14} className="spin" /> Generating…</>
+              : <><IconQR size={14} /> Generate QR</>}
+          </button>
+        )}
+      </div>
     </>
   );
 }

@@ -1,0 +1,10 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+tmp/
+.u2net/
+gen_favicons.py
+smoke_test.py
+*.log

@@ -2,6 +2,7 @@ import asyncio
 import io
 import logging
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -10,6 +11,8 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import quote
+
+IS_WINDOWS = platform.system() == "Windows"
 
 import fitz  # PyMuPDF
 import yt_dlp
@@ -51,13 +54,18 @@ CHUNK_TIMEOUT_SEC = 1800
 SOFFICE_DIR_CANDIDATES = [
     r"C:\Program Files\LibreOffice\program",
     r"C:\Program Files (x86)\LibreOffice\program",
+    "/usr/lib/libreoffice/program",
+    "/opt/libreoffice/program",
+    "/usr/local/lib/libreoffice/program",
 ]
 LO_DIR = next((p for p in SOFFICE_DIR_CANDIDATES if Path(p).exists()), None)
 if LO_DIR is None:
     raise RuntimeError(
-        "LibreOffice not found. Install it (winget install TheDocumentFoundation.LibreOffice)."
+        "LibreOffice not found. Install it "
+        "(Windows: winget install TheDocumentFoundation.LibreOffice; "
+        "Debian/Ubuntu: apt-get install libreoffice)."
     )
-SOFFICE = str(Path(LO_DIR) / "soffice.com")
+SOFFICE = str(Path(LO_DIR) / ("soffice.com" if IS_WINDOWS else "soffice"))
 LO_PYTHON_HOME = next(
     (str(p) for p in Path(LO_DIR).glob("python-core-*") if p.is_dir()),
     None,
@@ -68,7 +76,11 @@ EXECUTOR = ThreadPoolExecutor(max_workers=NUM_WORKERS, thread_name_prefix="lo")
 
 def _soffice_env():
     env = os.environ.copy()
-    if LO_PYTHON_HOME:
+    # On Windows the bundled Python embedding inside soffice.bin can fail to find
+    # its stdlib unless PYTHONHOME points at the LO-bundled python. On Linux the
+    # distro's libreoffice package self-discovers — setting PYTHONHOME there
+    # would break it.
+    if IS_WINDOWS and LO_PYTHON_HOME:
         env["PYTHONHOME"] = LO_PYTHON_HOME
     env.pop("PYTHONPATH", None)
     return env
@@ -298,6 +310,39 @@ def _emoji_blocking(data: bytes, size: int) -> bytes:
     return buf.getvalue()
 
 
+# ── QR ────────────────────────────────────────────────
+import qrcode
+from qrcode.constants import ERROR_CORRECT_L, ERROR_CORRECT_M, ERROR_CORRECT_Q, ERROR_CORRECT_H
+
+ECC_MAP = {"L": ERROR_CORRECT_L, "M": ERROR_CORRECT_M, "Q": ERROR_CORRECT_Q, "H": ERROR_CORRECT_H}
+
+
+class QRRequest(BaseModel):
+    text: str
+    size: int = 512
+    fg: str = "#0f172a"
+    bg: str = "#ffffff"
+    ecc: str = "M"  # L / M / Q / H
+
+
+def _qr_blocking(req: QRRequest) -> bytes:
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=ECC_MAP.get(req.ecc.upper(), ERROR_CORRECT_M),
+        box_size=10,
+        border=2,
+    )
+    qr.add_data(req.text)
+    qr.make(fit=True)
+    bg = (0, 0, 0, 0) if req.bg.lower() in {"transparent", "none", ""} else req.bg
+    img = qr.make_image(fill_color=req.fg, back_color=bg).convert("RGBA")
+    if img.size[0] != req.size:
+        img = img.resize((req.size, req.size), Image.NEAREST)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
 @app.get("/health")
 def health():
     return {
@@ -306,10 +351,31 @@ def health():
             "pdf": "libreoffice-headless",
             "media": "yt-dlp",
             "image": "rembg-u2net",
+            "qr": "qrcode",
         },
         "workers": NUM_WORKERS,
         "chunk_timeout_sec": CHUNK_TIMEOUT_SEC,
     }
+
+
+@app.post("/qr")
+async def qr_generate(req: QRRequest):
+    if not req.text.strip():
+        raise HTTPException(400, "Text is required.")
+    if req.size not in {128, 256, 512, 1024}:
+        raise HTTPException(400, "Size must be 128/256/512/1024.")
+    if len(req.text) > 4000:
+        raise HTTPException(400, "Text too long (max 4000 chars).")
+    try:
+        out = await asyncio.to_thread(_qr_blocking, req)
+    except Exception as e:
+        log.exception("qr failed")
+        raise HTTPException(500, f"{e}")
+    return StreamingResponse(
+        io.BytesIO(out),
+        media_type="image/png",
+        headers={"Content-Disposition": 'attachment; filename="qr.png"'},
+    )
 
 
 @app.post("/image/remove-bg")
@@ -504,4 +570,6 @@ async def convert(file: UploadFile = File(...)):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8001, log_config=None)
+    host = os.environ.get("HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", "8001"))
+    uvicorn.run(app, host=host, port=port, log_config=None)

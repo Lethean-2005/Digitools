@@ -1,0 +1,15 @@
+services:
+  api:
+    build: ./backend
+    container_name: digitools-api
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8001
+    volumes:
+      - u2net:/root/.u2net   # persist rembg model across rebuilds
+
+volumes:
+  u2net:
