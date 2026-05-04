@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Python deps first so layer caching helps
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Pre-download the rembg U2Net model into the image (~170 MB) so cold starts are fast.
@@ -30,7 +30,7 @@ ENV U2NET_HOME=/root/.u2net
 RUN python -c "from rembg import new_session; new_session('u2net')"
 
 # App
-COPY main.py .
+COPY backend/main.py .
 
 ENV HOST=0.0.0.0 \
     PORT=8001 \
