@@ -1,0 +1,37 @@
+# Render.com Blueprint — defines both services in one repo
+# Apply via:  Render dashboard → New → Blueprint → connect Lethean-2005/Digitools
+services:
+  # ── Static frontend (Vite build) ──────────────────────────────
+  - type: web
+    name: digitools-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    pullRequestPreviewsEnabled: true
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE
+        sync: false   # set this in the dashboard after the API is up
+
+  # ── FastAPI backend (Docker) ──────────────────────────────────
+  # Needs ≥ 2 GB RAM (rembg U2Net + LibreOffice). Use plan: standard or larger.
+  - type: web
+    name: digitools-api
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    plan: standard
+    healthCheckPath: /health
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: "8001"
+    disk:
+      name: u2net-cache
+      mountPath: /root/.u2net
+      sizeGB: 1
