@@ -29,8 +29,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 ENV U2NET_HOME=/root/.u2net
 RUN python -c "from rembg import new_session; new_session('u2net')"
 
-# App
-COPY backend/main.py .
+# Copy the rest of the backend code
+COPY backend/ .
 
 ENV HOST=0.0.0.0 \
     PORT=8001 \

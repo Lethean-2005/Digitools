@@ -1,6 +1,6 @@
 services:
   api:
-    build: ./backend
+    build: .
     container_name: digitools-api
     restart: unless-stopped
     ports:

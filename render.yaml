@@ -22,7 +22,7 @@ services:
   - type: web
     name: digitools-api
     runtime: docker
-    dockerfilePath: ./backend/Dockerfile
+    dockerfilePath: Dockerfile
     plan: standard
     healthCheckPath: /health
     envVars:
