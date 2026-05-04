@@ -164,6 +164,36 @@ const IconImage = (p) => (
     <path d="M21 15l-5 -5l-11 11" />
   </Icon>
 );
+const IconFile = (p) => (
+  <Icon {...p}>
+    <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+    <path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z" />
+  </Icon>
+);
+const IconFolder = (p) => (
+  <Icon {...p}>
+    <path d="M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2" />
+  </Icon>
+);
+const IconHeart = (p) => (
+  <Icon {...p}>
+    <path d="M19.5 12.572l-7.5 7.428l-7.5 -7.428a5 5 0 1 1 7.5 -6.566a5 5 0 1 1 7.5 6.572" />
+  </Icon>
+);
+const IconHistory2 = (p) => (
+  <Icon {...p}>
+    <path d="M12 8l0 4l3 3" />
+    <path d="M3 12a9 9 0 1 0 9 -9a9 9 0 0 0 -7 3.5" />
+    <path d="M3 4v4h4" />
+  </Icon>
+);
+const IconStack = (p) => (
+  <Icon {...p}>
+    <path d="M12 4l-8 4l8 4l8 -4l-8 -4" />
+    <path d="M4 12l8 4l8 -4" />
+    <path d="M4 16l8 4l8 -4" />
+  </Icon>
+);
 
 /* ── App shell ───────────────────────────────────────── */
 const TOOLS = [
@@ -173,20 +203,62 @@ const TOOLS = [
   { id: 'emoji',   label: 'Create Emoji',     desc: 'Make a 128/256/512 px emoji from an image', Icon: IconSparkles },
 ];
 
+const SIDEBAR_GROUPS = [
+  {
+    title: 'Tools',
+    items: [
+      {
+        type: 'group',
+        id: 'documents',
+        label: 'Documents',
+        Icon: IconFile,
+        children: [
+          { id: 'pdf',   label: 'PDF → Word' },
+        ],
+      },
+      {
+        type: 'group',
+        id: 'media-group',
+        label: 'Media',
+        Icon: IconDownload,
+        badge: '2',
+        children: [
+          { id: 'media-video', label: 'Video Download', target: 'media' },
+          { id: 'media-audio', label: 'Audio Download', target: 'media' },
+        ],
+      },
+      {
+        type: 'group',
+        id: 'images-group',
+        label: 'Images',
+        Icon: IconImage,
+        badge: '2',
+        children: [
+          { id: 'remove', label: 'Remove Background' },
+          { id: 'emoji',  label: 'Create Emoji' },
+        ],
+      },
+      { type: 'item', id: 'likes', label: 'Likes', Icon: IconHeart, soon: true },
+    ],
+  },
+  {
+    title: 'My library',
+    items: [
+      { type: 'item', id: 'files',    label: 'My Files',  Icon: IconFolder, soon: true },
+      { type: 'item', id: 'history',  label: 'History',   Icon: IconHistory2, badge: '0' },
+      { type: 'item', id: 'recent',   label: 'Recent',    Icon: IconStack,  soon: true },
+      { type: 'item', id: 'settings', label: 'Settings',  Icon: IconTool,   soon: true },
+    ],
+  },
+];
+
 export default function App() {
   const [tab, setTab] = useState('pdf');
-  const cardRef = useRef(null);
-
-  const scrollToCard = () => {
-    cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
-
   return (
-    <>
-      <Navbar tab={tab} setTab={setTab} />
+    <div className="layout">
+      <Sidebar tab={tab} setTab={setTab} />
       <main className="page">
-        <Hero onPrimary={(id) => { setTab(id); scrollToCard(); }} />
-        <section className="tool-section" ref={cardRef}>
+        <section className="tool-section">
           <div className="card">
             {tab === 'pdf'    && <UploadPanel />}
             {tab === 'media'  && <MediaPanel />}
@@ -194,10 +266,94 @@ export default function App() {
             {tab === 'emoji'  && <ImagePanel mode="emoji" />}
           </div>
         </section>
-        <Features />
-        <Footer />
       </main>
-    </>
+    </div>
+  );
+}
+
+function Sidebar({ tab, setTab }) {
+  // figure out which group contains the active tab so it's expanded by default
+  const groupHasTab = (g) =>
+    g.type === 'group' && g.children.some((c) => (c.target || c.id) === tab);
+  const initialExpanded = {};
+  for (const section of SIDEBAR_GROUPS) {
+    for (const it of section.items) {
+      if (it.type === 'group') initialExpanded[it.id] = groupHasTab(it);
+    }
+  }
+  const [expanded, setExpanded] = useState(initialExpanded);
+  const toggle = (id) => setExpanded((p) => ({ ...p, [id]: !p[id] }));
+
+  return (
+    <aside className="sidebar">
+      <a className="sb-brand" href="/" aria-label="Digitools home">
+        <span className="sb-brand-mark"><IconTool size={20} strokeWidth={2.25} /></span>
+        <span className="sb-brand-text">Digitools</span>
+      </a>
+      {SIDEBAR_GROUPS.map((section) => (
+        <div className="sb-section" key={section.title}>
+          <p className="sb-heading">{section.title}</p>
+          {section.items.map((it) => {
+            if (it.type === 'group') {
+              const isOpen = expanded[it.id];
+              const childActive = it.children.some((c) => (c.target || c.id) === tab);
+              return (
+                <div className="sb-group" key={it.id}>
+                  <button
+                    type="button"
+                    className={`sb-item${childActive && !isOpen ? ' active' : ''}`}
+                    onClick={() => toggle(it.id)}
+                    aria-expanded={isOpen}
+                  >
+                    <span className="sb-icon"><it.Icon size={18} strokeWidth={1.75} /></span>
+                    <span className="sb-label">{it.label}</span>
+                    {it.badge && <span className="sb-badge">{it.badge}</span>}
+                    <IconChevronDown
+                      size={14}
+                      strokeWidth={2}
+                      className={`sb-chev${isOpen ? ' up' : ''}`}
+                    />
+                  </button>
+                  {isOpen && (
+                    <ul className="sb-children">
+                      {it.children.map((c) => {
+                        const target = c.target || c.id;
+                        const active = tab === target;
+                        return (
+                          <li key={c.id}>
+                            <button
+                              type="button"
+                              className={`sb-child${active ? ' active' : ''}`}
+                              onClick={() => setTab(target)}
+                            >
+                              {c.label}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              );
+            }
+            return (
+              <button
+                key={it.id}
+                type="button"
+                className={`sb-item${tab === it.id ? ' active' : ''}${it.soon ? ' soon' : ''}`}
+                onClick={() => !it.soon && setTab(it.id)}
+                disabled={it.soon}
+                title={it.soon ? 'Coming soon' : undefined}
+              >
+                <span className="sb-icon"><it.Icon size={18} strokeWidth={1.75} /></span>
+                <span className="sb-label">{it.label}</span>
+                {it.badge && <span className="sb-badge">{it.badge}</span>}
+              </button>
+            );
+          })}
+        </div>
+      ))}
+    </aside>
   );
 }
 
@@ -675,81 +831,15 @@ function Footer() {
   );
 }
 
-function Navbar({ tab, setTab }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(false);
-  const toolsRef = useRef(null);
-
-  useEffect(() => {
-    const onDocClick = (e) => {
-      if (toolsRef.current && !toolsRef.current.contains(e.target)) {
-        setToolsOpen(false);
-      }
-    };
-    const onKey = (e) => { if (e.key === 'Escape') setToolsOpen(false); };
-    document.addEventListener('mousedown', onDocClick);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, []);
-
-  const activeTool = TOOLS.find((t) => t.id === tab);
-  const ToolIcon = activeTool?.Icon || IconTool;
-
+function Navbar() {
   return (
     <header className="nav">
       <div className="nav-inner">
         <a className="nav-brand" href="/" aria-label="Digitools home">
           <span className="nav-brand-text">Digitools</span>
         </a>
-
-        <nav className={`nav-links${menuOpen ? ' open' : ''}`}>
-          <div className={`nav-dropdown${toolsOpen ? ' open' : ''}`} ref={toolsRef}>
-            <button
-              type="button"
-              className={`nav-link${activeTool ? ' active' : ''}`}
-              onClick={() => setToolsOpen((v) => !v)}
-              aria-expanded={toolsOpen}
-              aria-haspopup="menu"
-            >
-              <IconTool size={16} strokeWidth={2} />
-              <span>Tools</span>
-              <IconChevronDown size={14} strokeWidth={2} className={`chev${toolsOpen ? ' up' : ''}`} />
-            </button>
-
-            {toolsOpen && (
-              <div className="dropdown-menu" role="menu">
-                {TOOLS.map(({ id, label, desc, Icon }) => (
-                  <button
-                    key={id}
-                    type="button"
-                    role="menuitem"
-                    className={`dropdown-item${tab === id ? ' active' : ''}`}
-                    onClick={() => { setTab(id); setToolsOpen(false); setMenuOpen(false); }}
-                  >
-                    <span className="dropdown-icon"><Icon size={18} strokeWidth={1.75} /></span>
-                    <span className="dropdown-text">
-                      <span className="dropdown-label">{label}</span>
-                      <span className="dropdown-desc">{desc}</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </nav>
-
         <div className="nav-actions">
           <button className="ghost-btn" aria-label="Help"><IconHelp size={18} /></button>
-          <button
-            className="ghost-btn nav-burger"
-            aria-label="Menu"
-            onClick={() => setMenuOpen((v) => !v)}
-          >
-            <IconMenu size={18} />
-          </button>
         </div>
       </div>
     </header>

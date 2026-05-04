@@ -25,7 +25,7 @@
 
 body {
   margin: 0;
-  background: var(--slate-100);
+  background: #f7f8fa;
   color: var(--slate-900);
   /* Saira for Latin, Kantumruy Pro for Khmer (browser picks per-character) */
   font-family: 'Saira', 'Kantumruy Pro', system-ui, sans-serif;
@@ -40,12 +40,183 @@ body {
   unicode-range: U+1780-17FF, U+19E0-19FF, U+200B;
 }
 
+.layout {
+  display: flex;
+  align-items: stretch;
+  min-height: 100vh;
+}
 .page {
-  min-height: calc(100vh - 64px);
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: stretch;
 }
+.tool-section {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 56px 32px 56px 40px;
+}
+.tool-section .card {
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .layout { flex-direction: column; }
+  .sidebar {
+    position: static;
+    width: 100%;
+    height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--slate-200);
+    padding: 12px;
+  }
+}
+
+/* ── Sidebar (Brainwave-style) ─────────────────────── */
+.sidebar {
+  width: 248px;
+  flex-shrink: 0;
+  background: #fff;
+  border-right: 1px solid var(--slate-200);
+  padding: 18px 12px 24px;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.sb-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 16px;
+  text-decoration: none;
+  border-bottom: 1px dashed var(--slate-200);
+  margin-bottom: 6px;
+}
+.sb-brand-mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--slate-900);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.sb-brand-text {
+  font-family: 'Teko', sans-serif;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--slate-900);
+  line-height: 1;
+}
+.sb-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0 14px;
+  border-bottom: 1px dashed var(--slate-200);
+  margin-bottom: 12px;
+}
+.sb-section:last-child { border-bottom: 0; margin-bottom: 0; }
+.sb-heading {
+  font-size: 11px;
+  font-variation-settings: 'wdth' 102.8, 'wght' 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--slate-400);
+  padding: 4px 12px 8px;
+  margin: 0;
+}
+.sb-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13.5px;
+  font-variation-settings: 'wdth' 102.8, 'wght' 500;
+  color: var(--slate-700);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s, color 0.12s;
+}
+.sb-item:hover:not(:disabled) { background: var(--slate-50); color: var(--slate-900); }
+.sb-item.active {
+  background: var(--slate-100);
+  color: var(--slate-900);
+  font-variation-settings: 'wdth' 102.8, 'wght' 600;
+}
+.sb-item.soon { opacity: 0.55; cursor: not-allowed; }
+.sb-icon {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: var(--slate-500);
+  flex-shrink: 0;
+}
+.sb-item.active .sb-icon { color: var(--slate-900); }
+.sb-label { flex: 1; min-width: 0; }
+.sb-badge {
+  font-size: 11px;
+  font-variation-settings: 'wdth' 102.8, 'wght' 600;
+  color: var(--slate-500);
+  background: var(--slate-100);
+  border: 1px solid var(--slate-200);
+  padding: 1px 6px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.sb-chev {
+  color: var(--slate-400);
+  transition: transform 0.18s ease;
+  flex-shrink: 0;
+}
+.sb-chev.up { transform: rotate(180deg); }
+
+.sb-group { display: flex; flex-direction: column; }
+.sb-children {
+  list-style: none;
+  margin: 4px 0 4px;
+  padding: 4px 0 4px 30px;
+  border-left: 1px dashed var(--slate-200);
+  margin-left: 21px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sb-child {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 7px 10px;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--slate-500);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.sb-child:hover { background: var(--slate-50); color: var(--slate-900); }
+.sb-child.active {
+  color: var(--slate-900);
+  background: var(--slate-100);
+  font-variation-settings: 'wdth' 102.8, 'wght' 600;
+}
+
 
 .tool-section {
   display: flex;
