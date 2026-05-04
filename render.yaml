@@ -23,7 +23,7 @@ services:
     name: digitools-api
     runtime: docker
     rootDir: backend
-    dockerfilePath: ./Dockerfile
+    dockerfilePath: Dockerfile
     plan: standard
     healthCheckPath: /health
     envVars:
