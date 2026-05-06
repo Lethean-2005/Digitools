@@ -10,7 +10,11 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5173)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5174)",
       "Bash(docker --version)",
-      "Bash(docker info *)"
+      "Bash(docker info *)",
+      "Bash(git fetch *)",
+      "Bash(git pull *)",
+      "Bash(git stash *)",
+      "Bash(git push *)"
     ]
   }
 }
