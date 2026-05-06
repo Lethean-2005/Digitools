@@ -297,14 +297,17 @@ def _media_download_blocking(url: str, fmt: str, out_dir: Path) -> Path:
             }],
         })
     else:
-        # Format chain: prefer mp4 H.264 ≤1080p with separate audio, then any
-        # progressive mp4 ≤1080p, then any ≤1080p, then the absolute fallback
-        # `b` (yt-dlp's "best of whatever's there"). The trailing `b` is what
-        # rescues sites like Pinterest where the strict mp4/height filters
-        # match nothing.
+        # Format chain — flexible enough for sites where audio isn't tagged
+        # `m4a` (e.g. Pinterest tags its audio-only stream as `mp4`). Order:
+        #   1. mp4 H.264 video + any audio (preferred)
+        #   2. any video + any audio (covers WebM-only sources)
+        #   3. progressive mp4 ≤1080p (single-stream)
+        #   4. any progressive ≤1080p
+        #   5. `b` — yt-dlp's "best of whatever's there" (last resort)
         opts = _ydl({
             "format": (
-                "bv*[ext=mp4][height<=1080]+ba[ext=m4a]/"
+                "bv*[ext=mp4][height<=1080]+ba/"
+                "bv*[height<=1080]+ba/"
                 "b[ext=mp4][height<=1080]/"
                 "b[height<=1080]/"
                 "b"
