@@ -415,24 +415,44 @@ def _sniff_format(data: bytes) -> str:
             return "AVIF"
         return f"ISO-BMFF ({sub.decode('ascii', 'replace')})"
     if head[:5] == b"<?xml" or head[:4] == b"<svg":
-        return "SVG (vector — not supported by OCR)"
+        return "SVG"
     if head[:4] == b"%PDF":
-        return "PDF (use /pdf, not /ocr)"
+        return "PDF"
     return f"unknown ({head[:8].hex()})"
+
+
+def _rasterize_to_png(data: bytes, fmt: str) -> bytes:
+    """Convert vector / multi-page formats to a PNG bytes blob via PyMuPDF."""
+    if fmt.startswith("SVG"):
+        ftype = "svg"
+    elif fmt.startswith("PDF"):
+        ftype = "pdf"
+    else:
+        return data
+    with fitz.open(stream=data, filetype=ftype) as doc:
+        page = doc[0]
+        # 2× zoom so small text survives OCR
+        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+        return pix.tobytes("png")
 
 
 def _ocr_blocking(data: bytes, lang: str) -> str:
     import pytesseract
     if TESSERACT_BIN:
         pytesseract.pytesseract.tesseract_cmd = TESSERACT_BIN
+    fmt = _sniff_format(data)
+    if fmt.startswith(("SVG", "PDF")):
+        try:
+            data = _rasterize_to_png(data, fmt)
+        except Exception as e:
+            raise RuntimeError(f"Failed to rasterize {fmt}: {e}")
     try:
         img = Image.open(io.BytesIO(data))
         img.load()
     except Exception as e:
-        fmt = _sniff_format(data)
         raise RuntimeError(
             f"Could not read image. Detected: {fmt}. PIL: {e}. "
-            f"Supported: JPG / PNG / WEBP / GIF / BMP / TIFF / HEIC."
+            f"Supported: JPG / PNG / WEBP / GIF / BMP / TIFF / HEIC / SVG / PDF (1st page)."
         )
     return pytesseract.image_to_string(img, lang=lang)
 
