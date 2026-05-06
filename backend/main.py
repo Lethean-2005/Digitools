@@ -350,14 +350,44 @@ def _get_rembg_session():
     return _REMBG_SESSION
 
 
+# Cap input dimensions before rembg so inference stays within free-tier RAM.
+# 1024 is plenty for visual quality and keeps peak memory predictable.
+_REMBG_MAX_DIM = 1024
+
+
+def _downscale_for_rembg(data: bytes) -> bytes:
+    img = Image.open(io.BytesIO(data))
+    img.load()
+    w, h = img.size
+    big = max(w, h)
+    if big <= _REMBG_MAX_DIM:
+        return data
+    scale = _REMBG_MAX_DIM / big
+    img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS)
+    if img.mode not in ("RGB", "RGBA"):
+        img = img.convert("RGBA")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=False)
+    return buf.getvalue()
+
+
+# Serialize rembg + emoji so two concurrent users never run inference at the
+# same time on the free-tier container (would race for the model + RAM).
+_REMBG_INFER_LOCK = __import__("threading").Lock()
+
+
 def _remove_bg_blocking(data: bytes) -> bytes:
     from rembg import remove
-    return remove(data, session=_get_rembg_session())
+    data = _downscale_for_rembg(data)
+    with _REMBG_INFER_LOCK:
+        return remove(data, session=_get_rembg_session())
 
 
 def _emoji_blocking(data: bytes, size: int) -> bytes:
     from rembg import remove
-    cut = remove(data, session=_get_rembg_session())
+    data = _downscale_for_rembg(data)
+    with _REMBG_INFER_LOCK:
+        cut = remove(data, session=_get_rembg_session())
     img = Image.open(io.BytesIO(cut)).convert("RGBA")
     bbox = img.split()[-1].getbbox()
     if bbox:
