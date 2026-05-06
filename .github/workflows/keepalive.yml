@@ -1,0 +1,15 @@
+name: Keep Render warm
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /health
+        run: |
+          curl -fsSL --max-time 90 https://digitools-c5n7.onrender.com/health \
+            -o /dev/null -w "status=%{http_code} time=%{time_total}s\n"
