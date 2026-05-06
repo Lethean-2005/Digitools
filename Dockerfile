@@ -3,6 +3,7 @@ FROM python:3.12-slim-bookworm
 # System dependencies:
 # - LibreOffice (writer + core) for PDF -> DOCX
 # - FFmpeg for yt-dlp post-processing (audio extraction, A/V merge)
+# - Tesseract (+ eng/khm language data) for image OCR
 # - Fonts (Noto, Liberation, CJK + Khmer) so Khmer / mixed-script PDFs render correctly
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libreoffice-writer \
@@ -14,6 +15,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         fonts-noto-cjk \
         fonts-khmeros \
         ffmpeg \
+        tesseract-ocr \
+        tesseract-ocr-eng \
+        tesseract-ocr-khm \
         curl \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*

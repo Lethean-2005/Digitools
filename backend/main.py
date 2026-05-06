@@ -20,7 +20,7 @@ from docx import Document
 from docxcompose.composer import Composer
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from PIL import Image
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
@@ -310,6 +310,42 @@ def _emoji_blocking(data: bytes, size: int) -> bytes:
     return buf.getvalue()
 
 
+# ── OCR (Tesseract) ───────────────────────────────────
+def _find_tesseract() -> str | None:
+    found = shutil.which("tesseract")
+    if found:
+        return found
+    if IS_WINDOWS:
+        for p in (
+            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+        ):
+            if Path(p).exists():
+                return p
+    return None
+
+
+TESSERACT_BIN = _find_tesseract()
+log.info("tesseract: %s", TESSERACT_BIN or "NOT FOUND")
+
+# If a sibling tessdata/ dir exists (handy on Windows where the system tessdata
+# is under Program Files and adding language packs would need admin), prefer it.
+_LOCAL_TESSDATA = Path(__file__).parent / "tessdata"
+if _LOCAL_TESSDATA.is_dir():
+    os.environ["TESSDATA_PREFIX"] = str(_LOCAL_TESSDATA)
+    log.info("tessdata: %s", _LOCAL_TESSDATA)
+
+OCR_LANGS = {"eng", "khm", "eng+khm"}
+
+
+def _ocr_blocking(data: bytes, lang: str) -> str:
+    import pytesseract
+    if TESSERACT_BIN:
+        pytesseract.pytesseract.tesseract_cmd = TESSERACT_BIN
+    img = Image.open(io.BytesIO(data))
+    return pytesseract.image_to_string(img, lang=lang)
+
+
 # ── QR ────────────────────────────────────────────────
 import qrcode
 from qrcode.constants import ERROR_CORRECT_L, ERROR_CORRECT_M, ERROR_CORRECT_Q, ERROR_CORRECT_H
@@ -343,6 +379,41 @@ def _qr_blocking(req: QRRequest) -> bytes:
     return buf.getvalue()
 
 
+@app.get("/", response_class=HTMLResponse)
+def root():
+    return """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Digitools API</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 640px;
+         margin: 4rem auto; padding: 0 1.25rem; line-height: 1.55; }
+  h1 { margin-bottom: .25rem; }
+  p.lead { color: #555; margin-top: 0; }
+  code { background: rgba(127,127,127,.15); padding: .1rem .35rem; border-radius: 4px; }
+  ul { padding-left: 1.25rem; }
+  li { margin: .25rem 0; }
+  a { color: #2563eb; }
+</style>
+</head>
+<body>
+  <h1>Digitools API</h1>
+  <p class="lead">FastAPI backend. The web UI lives elsewhere — point it here via <code>VITE_API_BASE</code>.</p>
+  <ul>
+    <li><a href="/health">/health</a> — engine status</li>
+    <li><a href="/docs">/docs</a> — interactive API docs (Swagger)</li>
+    <li><a href="/redoc">/redoc</a> — alternative API docs</li>
+  </ul>
+  <p>Endpoints: <code>POST /convert</code>, <code>POST /media/info</code>, <code>POST /media/download</code>,
+     <code>POST /image/remove-bg</code>, <code>POST /image/emoji</code>, <code>POST /image/ocr</code>,
+     <code>POST /qr</code>.</p>
+</body>
+</html>"""
+
+
 @app.get("/health")
 def health():
     return {
@@ -351,6 +422,7 @@ def health():
             "pdf": "libreoffice-headless",
             "media": "yt-dlp",
             "image": "rembg-u2net",
+            "ocr": "tesseract" if TESSERACT_BIN else "missing",
             "qr": "qrcode",
         },
         "workers": NUM_WORKERS,
@@ -430,6 +502,27 @@ async def image_emoji(file: UploadFile = File(...), size: int = Form(256)):
         )
     }
     return StreamingResponse(io.BytesIO(out), media_type="image/png", headers=headers)
+
+
+@app.post("/image/ocr")
+async def image_ocr(file: UploadFile = File(...), lang: str = Form("eng")):
+    if TESSERACT_BIN is None:
+        raise HTTPException(503, "Tesseract is not installed on the server.")
+    if lang not in OCR_LANGS:
+        raise HTTPException(400, f"lang must be one of {sorted(OCR_LANGS)}.")
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(400, "Only image files are accepted.")
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Empty file.")
+    if len(data) > MAX_IMAGE_BYTES:
+        raise HTTPException(413, "Image exceeds 25 MB limit.")
+    try:
+        text = await asyncio.to_thread(_ocr_blocking, data, lang)
+    except Exception as e:
+        log.exception("ocr failed")
+        raise HTTPException(500, f"{e}")
+    return {"text": text}
 
 
 @app.post("/media/info")

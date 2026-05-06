@@ -13,6 +13,7 @@ dist/
 # Local data / artefacts
 backend/tmp/
 backend/.u2net/
+backend/tessdata/
 *.log
 .env
 .env.local

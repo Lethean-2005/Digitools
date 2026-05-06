@@ -11,6 +11,7 @@ All-in-one digital toolbox: convert PDFs to Word, download videos/audio from 100
   - Media download: `yt-dlp` + FFmpeg.
   - Image background removal & emoji: `rembg` (U2Net).
   - QR generation: `qrcode[pil]`.
+  - Image OCR: Tesseract via `pytesseract` (English + Khmer).
 
 ## Run locally
 
@@ -29,6 +30,7 @@ System dependencies (Windows):
 ```powershell
 winget install TheDocumentFoundation.LibreOffice
 winget install Gyan.FFmpeg.Essentials
+winget install UB-Mannheim.TesseractOCR
 ```
 
 ### Backend (Linux)
@@ -39,6 +41,7 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 sudo apt-get install libreoffice-writer libreoffice-core ffmpeg \
+                     tesseract-ocr tesseract-ocr-eng tesseract-ocr-khm \
                      fonts-noto fonts-noto-cjk fonts-khmeros
 python main.py
 ```
@@ -65,6 +68,7 @@ The U2Net ONNX model (~170 MB) downloads automatically on first image call to `~
 | `POST /media/download` | Download as `video` (MP4) or `audio` (MP3) |
 | `POST /image/remove-bg` | Returns transparent-background PNG |
 | `POST /image/emoji` | Returns square emoji PNG (128 / 256 / 512) |
+| `POST /image/ocr` | Extract text from an image (Tesseract — `eng`, `khm`, `eng+khm`) |
 | `POST /qr` | Returns a QR-code PNG |
 | `GET /health` | Engine status |
 

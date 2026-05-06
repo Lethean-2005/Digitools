@@ -194,6 +194,19 @@ const IconStack = (p) => (
     <path d="M4 16l8 4l8 -4" />
   </Icon>
 );
+const IconText = (p) => (
+  <Icon {...p}>
+    <path d="M4 6h16" />
+    <path d="M4 12h10" />
+    <path d="M4 18h16" />
+  </Icon>
+);
+const IconCopy = (p) => (
+  <Icon {...p}>
+    <rect x="8" y="8" width="12" height="12" rx="2" />
+    <path d="M16 8v-2a2 2 0 0 0 -2 -2h-8a2 2 0 0 0 -2 2v8a2 2 0 0 0 2 2h2" />
+  </Icon>
+);
 const IconQR = (p) => (
   <Icon {...p}>
     <rect x="3" y="3" width="7" height="7" rx="1" />
@@ -209,6 +222,7 @@ const TOOLS = [
   { id: 'media',   label: 'Media Download',   desc: 'Download video/audio from URL', Icon: IconDownload },
   { id: 'remove',  label: 'Remove Background', desc: 'Cut out the background of any image', Icon: IconScissors },
   { id: 'emoji',   label: 'Create Emoji',     desc: 'Make a 128/256/512 px emoji from an image', Icon: IconSparkles },
+  { id: 'ocr',     label: 'Extract Text',     desc: 'Pull text out of any image (OCR)', Icon: IconText },
   { id: 'qr',      label: 'QR Generator',     desc: 'Generate a QR code from text or URL', Icon: IconQR },
 ];
 
@@ -241,10 +255,11 @@ const SIDEBAR_GROUPS = [
         id: 'images-group',
         label: 'Images',
         Icon: IconImage,
-        badge: '2',
+        badge: '3',
         children: [
           { id: 'remove', label: 'Remove Background' },
           { id: 'emoji',  label: 'Create Emoji' },
+          { id: 'ocr',    label: 'Extract Text' },
         ],
       },
       {
@@ -276,6 +291,7 @@ const TAB_META = {
   media:  { title: 'Media Download',   breadcrumb: ['Tools', 'Media'] },
   remove: { title: 'Remove Background', breadcrumb: ['Tools', 'Images'] },
   emoji:  { title: 'Create Emoji',     breadcrumb: ['Tools', 'Images'] },
+  ocr:    { title: 'Extract Text',     breadcrumb: ['Tools', 'Images'] },
   qr:     { title: 'QR Generator',     breadcrumb: ['Tools', 'Generators'] },
 };
 
@@ -327,6 +343,7 @@ export default function App() {
               {tab === 'media'  && <MediaPanel />}
               {tab === 'remove' && <ImagePanel mode="remove" />}
               {tab === 'emoji'  && <ImagePanel mode="emoji" />}
+              {tab === 'ocr'    && <OCRPanel />}
               {tab === 'qr'     && <QRPanel />}
             </div>
           </div>
@@ -717,6 +734,195 @@ function ImagePanel({ mode }) {
                 : isEmoji
                   ? <><IconSparkles size={14} /> Create emoji</>
                   : <><IconScissors size={14} /> Remove background</>}
+            </button>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ── OCR (Image → Text) ───────────────────────────────── */
+function OCRPanel() {
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [lang, setLang] = useState('eng');
+  const [copied, setCopied] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    return () => { if (preview) URL.revokeObjectURL(preview); };
+  }, [preview]);
+
+  const reset = () => {
+    if (preview) URL.revokeObjectURL(preview);
+    setFile(null); setPreview(null); setText(''); setError(''); setBusy(false);
+    if (inputRef.current) inputRef.current.value = '';
+  };
+
+  const setNewFile = (f) => {
+    if (!f) return;
+    setError('');
+    if (!f.type.startsWith('image/')) { setError('Only image files are accepted.'); return; }
+    if (f.size > IMG_MAX_BYTES)        { setError('Image exceeds 25 MB limit.');    return; }
+    if (preview) URL.revokeObjectURL(preview);
+    setFile(f);
+    setPreview(URL.createObjectURL(f));
+    setText('');
+  };
+
+  const onDrop = useCallback((e) => {
+    e.preventDefault();
+    setDragOver(false);
+    setNewFile(e.dataTransfer.files?.[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const run = async () => {
+    if (!file) return;
+    setBusy(true);
+    setError('');
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('lang', lang);
+      const r = await fetch(`${API_BASE}/image/ocr`, { method: 'POST', body: form });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.detail || `Failed (${r.status})`);
+      setText((j.text || '').trim());
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copy = async () => {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (_) {
+      setError('Could not copy to clipboard.');
+    }
+  };
+
+  const downloadTxt = () => {
+    if (!text) return;
+    const base = (file?.name || 'extracted').replace(/\.[^.]+$/, '');
+    triggerDownload(new Blob([text], { type: 'text/plain;charset=utf-8' }), `${base}.txt`);
+  };
+
+  return (
+    <>
+      <div className="head">
+        <div className="head-icon"><IconText size={20} strokeWidth={2.25} /></div>
+        <div className="head-text">
+          <h2>Extract Text</h2>
+          <p>Drop an image — get the text it contains. Supports English and Khmer.</p>
+        </div>
+        <button
+          className="ghost-btn"
+          onClick={reset}
+          aria-label="Clear"
+          disabled={!file && !error && !text}
+        ><IconX size={18} /></button>
+      </div>
+
+      {!file ? (
+        <div
+          className={`dropzone${dragOver ? ' drag' : ''}`}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={onDrop}
+        >
+          <IconText size={32} strokeWidth={1.5} className="dz-icon" />
+          <div className="dz-title">Choose an image or drag &amp; drop it here.</div>
+          <div className="dz-hint">JPG, PNG, WebP — up to 25 MB.</div>
+          <button className="browse-btn" type="button" onClick={() => inputRef.current?.click()}>
+            Browse Image
+          </button>
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => { setNewFile(e.target.files?.[0]); e.target.value = ''; }}
+          />
+        </div>
+      ) : (
+        <div className="img-compare">
+          <figure>
+            <figcaption>Image</figcaption>
+            <div className="img-thumb"><img src={preview} alt="" /></div>
+          </figure>
+          <figure>
+            <figcaption>Text</figcaption>
+            <div className="img-thumb" style={{ padding: 0, alignItems: 'stretch' }}>
+              {text ? (
+                <textarea
+                  readOnly
+                  value={text}
+                  style={{
+                    width: '100%', height: '100%', minHeight: 180,
+                    border: 0, resize: 'none', padding: 12,
+                    background: 'transparent', font: 'inherit', color: 'inherit',
+                  }}
+                />
+              ) : busy ? (
+                <span className="img-placeholder"><IconLoader size={20} className="spin" /> Working…</span>
+              ) : (
+                <span className="img-placeholder">Click "Extract" below</span>
+              )}
+            </div>
+          </figure>
+        </div>
+      )}
+
+      {file && (
+        <div className="seg" style={{ marginTop: 12 }}>
+          {[
+            { v: 'eng',     label: 'English' },
+            { v: 'khm',     label: 'Khmer' },
+            { v: 'eng+khm', label: 'Both' },
+          ].map((o) => (
+            <button
+              key={o.v}
+              className={`seg-opt${lang === o.v ? ' active' : ''}`}
+              onClick={() => setLang(o.v)}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {error && <div className="msg-err">{error}</div>}
+
+      {file && (
+        <div className="img-actions">
+          <button className="browse-btn" onClick={reset} disabled={busy}>
+            Choose another
+          </button>
+          {text ? (
+            <>
+              <button className="browse-btn" onClick={copy}>
+                <IconCopy size={14} /> {copied ? 'Copied!' : 'Copy'}
+              </button>
+              <button className="primary-btn" onClick={downloadTxt}>
+                <IconDownload size={14} /> Download .txt
+              </button>
+            </>
+          ) : (
+            <button className="primary-btn" onClick={run} disabled={busy}>
+              {busy
+                ? <><IconLoader size={14} className="spin" /> Working…</>
+                : <><IconText size={14} /> Extract text</>}
             </button>
           )}
         </div>
