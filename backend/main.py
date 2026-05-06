@@ -350,9 +350,10 @@ def _get_rembg_session():
     return _REMBG_SESSION
 
 
-# Cap input dimensions before rembg so inference stays within free-tier RAM.
-# 1024 is plenty for visual quality and keeps peak memory predictable.
+# Cap input dimensions before rembg / API so payloads stay reasonable.
 _REMBG_MAX_DIM = 1024
+_REMBG_INFER_LOCK = __import__("threading").Lock()
+REMOVE_BG_API_KEY = os.environ.get("REMOVE_BG_API_KEY", "").strip()
 
 
 def _downscale_for_rembg(data: bytes) -> bytes:
@@ -371,23 +372,38 @@ def _downscale_for_rembg(data: bytes) -> bytes:
     return buf.getvalue()
 
 
-# Serialize rembg + emoji so two concurrent users never run inference at the
-# same time on the free-tier container (would race for the model + RAM).
-_REMBG_INFER_LOCK = __import__("threading").Lock()
-
-
-def _remove_bg_blocking(data: bytes) -> bytes:
+def _remove_bg_local(data: bytes) -> bytes:
+    """Local rembg path — used when no remove.bg API key is configured."""
     from rembg import remove
     data = _downscale_for_rembg(data)
     with _REMBG_INFER_LOCK:
         return remove(data, session=_get_rembg_session())
 
 
-def _emoji_blocking(data: bytes, size: int) -> bytes:
-    from rembg import remove
+async def _remove_bg_api(data: bytes) -> bytes:
+    """remove.bg API path — used when REMOVE_BG_API_KEY is set."""
+    import httpx
     data = _downscale_for_rembg(data)
-    with _REMBG_INFER_LOCK:
-        cut = remove(data, session=_get_rembg_session())
+    async with httpx.AsyncClient(timeout=120) as client:
+        r = await client.post(
+            "https://api.remove.bg/v1.0/removebg",
+            headers={"X-Api-Key": REMOVE_BG_API_KEY},
+            files={"image_file": ("image.png", data, "image/png")},
+            data={"size": "auto", "format": "png"},
+        )
+    if r.status_code != 200:
+        raise RuntimeError(f"remove.bg API {r.status_code}: {r.text[:300]}")
+    return r.content
+
+
+async def _cutout(data: bytes) -> bytes:
+    """Background-removed PNG bytes. Picks API or local engine automatically."""
+    if REMOVE_BG_API_KEY:
+        return await _remove_bg_api(data)
+    return await asyncio.to_thread(_remove_bg_local, data)
+
+
+def _emoji_from_cutout(cut: bytes, size: int) -> bytes:
     img = Image.open(io.BytesIO(cut)).convert("RGBA")
     bbox = img.split()[-1].getbbox()
     if bbox:
@@ -562,7 +578,7 @@ def health():
         "engines": {
             "pdf": "libreoffice-headless",
             "media": "yt-dlp",
-            "image": f"rembg-{REMBG_MODEL}",
+            "image": "remove.bg-api" if REMOVE_BG_API_KEY else f"rembg-{REMBG_MODEL}",
             "image_edit": "pillow",
             "ocr": "tesseract" if TESSERACT_BIN else "missing",
             "qr": "qrcode",
@@ -604,7 +620,7 @@ async def image_remove_bg(file: UploadFile = File(...)):
     if len(data) > MAX_IMAGE_BYTES:
         raise HTTPException(413, "Image exceeds 25 MB limit.")
     try:
-        out = await asyncio.to_thread(_remove_bg_blocking, data)
+        out = await _cutout(data)
     except Exception as e:
         log.exception("remove-bg failed")
         raise HTTPException(500, f"{e}")
@@ -632,7 +648,8 @@ async def image_emoji(file: UploadFile = File(...), size: int = Form(256)):
     if len(data) > MAX_IMAGE_BYTES:
         raise HTTPException(413, "Image exceeds 25 MB limit.")
     try:
-        out = await asyncio.to_thread(_emoji_blocking, data, size)
+        cut = await _cutout(data)
+        out = await asyncio.to_thread(_emoji_from_cutout, cut, size)
     except Exception as e:
         log.exception("emoji failed")
         raise HTTPException(500, f"{e}")
