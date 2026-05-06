@@ -13,7 +13,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         fonts-noto \
         fonts-noto-cjk \
         fonts-khmeros \
-        fonts-khmeros-core \
         ffmpeg \
         curl \
         ca-certificates \

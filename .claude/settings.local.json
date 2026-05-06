@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/python.exe main.py)",
+      "Bash(npm run *)",
+      "Bash(curl -sf http://localhost:8001/health)",
+      "Bash(curl -sf http://localhost:5173)",
+      "Bash(curl -sf http://localhost:5174)",
+      "Bash(curl -s http://localhost:8001/health)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5173)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5174)",
+      "Bash(docker --version)",
+      "Bash(docker info *)"
+    ]
+  }
+}
