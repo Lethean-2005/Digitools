@@ -9,6 +9,7 @@ import subprocess
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import quote
 
@@ -32,7 +33,40 @@ logging.basicConfig(
 )
 log = logging.getLogger("converter")
 
-app = FastAPI(title="PDF / Media Converter")
+_tg_app = None
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    global _tg_app
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+    if token:
+        try:
+            from bot import build_app
+            _tg_app = build_app(token)
+            await _tg_app.initialize()
+            await _tg_app.start()
+            await _tg_app.updater.start_polling(drop_pending_updates=True)
+            log.info("telegram bot polling started")
+        except Exception:
+            log.exception("telegram bot failed to start")
+            _tg_app = None
+    else:
+        log.info("TELEGRAM_BOT_TOKEN unset — bot disabled")
+    try:
+        yield
+    finally:
+        if _tg_app:
+            try:
+                await _tg_app.updater.stop()
+                await _tg_app.stop()
+                await _tg_app.shutdown()
+                log.info("telegram bot stopped")
+            except Exception:
+                log.exception("telegram bot shutdown error")
+
+
+app = FastAPI(title="PDF / Media Converter", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
