@@ -28,9 +28,13 @@ WORKDIR /app
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download the rembg U2Net model into the image (~170 MB) so cold starts are fast.
+# Pre-download the rembg model into the image so cold starts are fast.
+# Using u2netp (~5 MB) by default — fits on 512 MB free-tier RAM. Set
+# REMBG_MODEL=u2net at build time for the larger/better model on a paid plan.
+ARG REMBG_MODEL=u2netp
 ENV U2NET_HOME=/root/.u2net
-RUN python -c "from rembg import new_session; new_session('u2net')"
+ENV REMBG_MODEL=${REMBG_MODEL}
+RUN python -c "from rembg import new_session; new_session('${REMBG_MODEL}')"
 
 # Copy the rest of the backend code
 COPY backend/ .

@@ -86,6 +86,16 @@ async def cmd_qr(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_photo(io.BytesIO(r.content), caption=text[:200])
 
 
+async def _safe_edit(msg, text: str):
+    try:
+        await msg.edit_text(text)
+    except Exception:
+        try:
+            await msg.chat.send_message(text)
+        except Exception:
+            log.exception("could not deliver message")
+
+
 async def _process_image(update: Update, img_bytes: bytes, action: str, msg):
     """action: 'ocr' | 'rmbg' | 'emoji'"""
     try:
@@ -108,22 +118,25 @@ async def _process_image(update: Update, img_bytes: bytes, action: str, msg):
                     data={"size": "256"},
                 )
             else:
-                return await msg.edit_text(f"Unknown action: {action}")
+                return await _safe_edit(msg, f"Unknown action: {action}")
         if r.status_code != 200:
             ct = r.headers.get("content-type", "")
             detail = r.json().get("detail", r.text) if ct.startswith("application/json") else r.text
-            return await msg.edit_text(f"{action} failed ({r.status_code}): {str(detail)[:300]}")
+            return await _safe_edit(msg, f"{action} failed ({r.status_code}): {str(detail)[:300]}")
         if action == "ocr":
             text = (r.json().get("text") or "").strip() or "(no text found)"
-            await msg.edit_text(text[:4000])
+            await _safe_edit(msg, text[:4000])
         else:
-            await msg.delete()
+            try:
+                await msg.delete()
+            except Exception:
+                pass
             # PNG (transparent for rmbg/emoji) — send as document so Telegram
             # doesn't strip the alpha channel via JPEG re-compression.
             fname = "no-bg.png" if action == "rmbg" else "emoji.png"
             await update.effective_message.reply_document(io.BytesIO(r.content), filename=fname)
     except Exception as e:
-        await msg.edit_text(f"{action} failed: {e}")
+        await _safe_edit(msg, f"{action} failed: {e}")
 
 
 async def _handle_incoming_image(update: Update, img_bytes: bytes, default_action: str = "ocr"):

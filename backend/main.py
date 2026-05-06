@@ -321,15 +321,23 @@ def _media_download_blocking(url: str, fmt: str, out_dir: Path) -> Path:
 # ── Image (rembg) ─────────────────────────────────────
 MAX_IMAGE_BYTES = 25 * 1024 * 1024
 EMOJI_SIZES = {128, 256, 512}
+
+# u2net (170 MB) is too big for 512 MB free-tier RAM. u2netp (~5 MB) fits and
+# is plenty for product/portrait/silhouette use cases. Override via env var
+# REMBG_MODEL if you upgrade to a paid plan and want better quality.
+REMBG_MODEL = os.environ.get("REMBG_MODEL", "u2netp")
 _REMBG_SESSION = None
+_REMBG_LOCK = __import__("threading").Lock()
 
 
 def _get_rembg_session():
     global _REMBG_SESSION
     if _REMBG_SESSION is None:
-        from rembg import new_session
-        log.info("loading rembg u2net session…")
-        _REMBG_SESSION = new_session("u2net")
+        with _REMBG_LOCK:
+            if _REMBG_SESSION is None:  # double-checked
+                from rembg import new_session
+                log.info("loading rembg %s session…", REMBG_MODEL)
+                _REMBG_SESSION = new_session(REMBG_MODEL)
     return _REMBG_SESSION
 
 
@@ -465,7 +473,7 @@ def health():
         "engines": {
             "pdf": "libreoffice-headless",
             "media": "yt-dlp",
-            "image": "rembg-u2net",
+            "image": f"rembg-{REMBG_MODEL}",
             "ocr": "tesseract" if TESSERACT_BIN else "missing",
             "qr": "qrcode",
         },
