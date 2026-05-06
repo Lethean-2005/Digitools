@@ -28,6 +28,13 @@ from PIL import Image
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
 
+# Register HEIC/HEIF support so iPhone photos work in OCR / compress / resize / etc.
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+except Exception:  # plugin not installed — non-fatal
+    pass
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -396,7 +403,15 @@ def _ocr_blocking(data: bytes, lang: str) -> str:
     import pytesseract
     if TESSERACT_BIN:
         pytesseract.pytesseract.tesseract_cmd = TESSERACT_BIN
-    img = Image.open(io.BytesIO(data))
+    try:
+        img = Image.open(io.BytesIO(data))
+        img.load()
+    except Exception as e:
+        raise RuntimeError(
+            f"Could not read image (PIL: {e}). "
+            "Supported: JPG / PNG / WEBP / GIF / BMP / TIFF / HEIC. "
+            "If this is HEIC/HEIF the server may need pillow-heif redeployed."
+        )
     return pytesseract.image_to_string(img, lang=lang)
 
 
