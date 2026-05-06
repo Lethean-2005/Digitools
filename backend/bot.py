@@ -51,17 +51,22 @@ async def _deny(update: Update):
 
 HELP_TEXT = (
     "Hi! I'm Digitools.\n\n"
-    "Image tools — send the command with an image attached, OR run the "
-    "command first and then send the image:\n"
-    "• /ocr — extract text (eng+khm)\n"
-    "• /rmbg — remove the background\n"
-    "• /emoji — make a square emoji PNG\n\n"
-    "Other tools:\n"
-    "• /pdf — convert a PDF to DOCX (or just send the PDF)\n"
-    "• /qr <text> — QR code\n"
-    "• /vid <url> — download video (MP4)\n"
-    "• /aud <url> — download audio (MP3)\n\n"
-    "Plain photo with no command defaults to /ocr."
+    "Image tools — send command with image attached, or run command first then send image:\n"
+    "• /ocr — extract text\n"
+    "• /rmbg — remove background\n"
+    "• /emoji — make emoji\n"
+    "• /compress [quality] — JPEG compress (default 75)\n"
+    "• /resize WxH — resize (e.g. /resize 800x600 or /resize 800)\n"
+    "• /convert <fmt> — to png|jpg|webp|gif|bmp\n\n"
+    "PDF tools (send command with PDF attached):\n"
+    "• /pdf — convert to DOCX\n"
+    "• /rotate <90|180|270> — rotate pages\n\n"
+    "Other:\n"
+    "• /qr <text>\n"
+    "• /vid <url> | /aud <url>\n"
+    "• /gif — attach video to make a 5s GIF\n"
+    "• /md2pdf <markdown> — render markdown to PDF\n"
+    "• /tr <lang> <text> — translate (e.g. /tr km hello)"
 )
 
 
@@ -309,16 +314,263 @@ async def cmd_pdf(update: Update, _ctx: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text("Just send me a PDF as a document — I'll convert it to DOCX.")
 
 
+async def cmd_tr(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _allowed(update):
+        return await _deny(update)
+    args = ctx.args or []
+    if len(args) < 2:
+        return await update.effective_message.reply_text(
+            "Usage: /tr <lang> <text>\nExamples: /tr km Hello world  /tr en សួស្តី"
+        )
+    target = args[0].lower()
+    text = " ".join(args[1:])
+    msg = await update.effective_message.reply_text(f"Translating → {target}…")
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            r = await client.post(f"{LOCAL_API}/translate",
+                                  json={"text": text, "target": target, "source": "auto"})
+        if r.status_code != 200:
+            return await _safe_edit(msg, f"Translate failed ({r.status_code}).")
+        await _safe_edit(msg, r.json().get("text", "(empty)")[:4000])
+    except Exception as e:
+        await _safe_edit(msg, f"Translate failed: {e}")
+
+
+async def cmd_md2pdf(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _allowed(update):
+        return await _deny(update)
+    text = update.effective_message.text or ""
+    # strip the leading "/md2pdf" command, leaving the markdown body
+    md = re.sub(r"^/md2pdf(@\S+)?\s*", "", text, count=1).strip()
+    if not md:
+        return await update.effective_message.reply_text(
+            "Usage: /md2pdf followed by markdown.\nExample:\n/md2pdf # Hello\nThis is **bold**."
+        )
+    msg = await update.effective_message.reply_text("Rendering PDF…")
+    try:
+        async with httpx.AsyncClient(timeout=180) as client:
+            r = await client.post(f"{LOCAL_API}/doc/md2pdf",
+                                  json={"text": md, "title": "Document"})
+        if r.status_code != 200:
+            return await _safe_edit(msg, f"md2pdf failed ({r.status_code}).")
+        try:
+            await msg.delete()
+        except Exception:
+            pass
+        await update.effective_message.reply_document(io.BytesIO(r.content), filename="document.pdf")
+    except Exception as e:
+        await _safe_edit(msg, f"md2pdf failed: {e}")
+
+
+# ── Image edit commands (caption mode) ─────────────────
+async def _attached_image_bytes(msg) -> tuple[bytes, str] | None:
+    """Returns (bytes, original_name) for an attached photo or image-document."""
+    if msg.photo:
+        f = await msg.photo[-1].get_file()
+        return bytes(await f.download_as_bytearray()), "photo.jpg"
+    if msg.document:
+        mime = (msg.document.mime_type or "").lower()
+        nm = msg.document.file_name or ""
+        if mime.startswith("image/") or nm.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".bmp")):
+            f = await msg.document.get_file()
+            return bytes(await f.download_as_bytearray()), nm or "image"
+    return None
+
+
+async def _attached_pdf_bytes(msg) -> tuple[bytes, str] | None:
+    if msg.document:
+        nm = msg.document.file_name or ""
+        if (msg.document.mime_type or "").lower() == "application/pdf" or nm.lower().endswith(".pdf"):
+            f = await msg.document.get_file()
+            return bytes(await f.download_as_bytearray()), nm or "input.pdf"
+    return None
+
+
+async def _attached_video_bytes(msg) -> bytes | None:
+    if msg.video:
+        f = await msg.video.get_file()
+        return bytes(await f.download_as_bytearray())
+    if msg.video_note:
+        f = await msg.video_note.get_file()
+        return bytes(await f.download_as_bytearray())
+    if msg.document and (msg.document.mime_type or "").startswith("video/"):
+        f = await msg.document.get_file()
+        return bytes(await f.download_as_bytearray())
+    return None
+
+
+async def cmd_compress(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _allowed(update):
+        return await _deny(update)
+    quality = 75
+    if ctx.args:
+        try:
+            quality = max(1, min(100, int(ctx.args[0])))
+        except ValueError:
+            return await update.effective_message.reply_text("quality must be 1–100.")
+    pair = await _attached_image_bytes(update.effective_message)
+    if not pair:
+        return await update.effective_message.reply_text("Attach an image. Usage: /compress [quality]")
+    img_bytes, _ = pair
+    msg = await update.effective_message.reply_text(f"Compressing (quality {quality})…")
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            r = await client.post(f"{LOCAL_API}/image/compress",
+                                  files={"file": ("img.bin", img_bytes, "image/jpeg")},
+                                  data={"quality": str(quality)})
+        if r.status_code != 200:
+            return await _safe_edit(msg, f"Compress failed ({r.status_code}).")
+        try: await msg.delete()
+        except Exception: pass
+        await update.effective_message.reply_document(io.BytesIO(r.content), filename="compressed.jpg")
+    except Exception as e:
+        await _safe_edit(msg, f"Compress failed: {e}")
+
+
+async def cmd_resize(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _allowed(update):
+        return await _deny(update)
+    if not ctx.args:
+        return await update.effective_message.reply_text("Usage: /resize <width>[x<height>]  e.g. /resize 800  or /resize 800x600")
+    spec = ctx.args[0].lower().replace("×", "x")
+    width, height = None, None
+    try:
+        if "x" in spec:
+            w, h = spec.split("x", 1)
+            width = int(w) if w else None
+            height = int(h) if h else None
+        else:
+            width = int(spec)
+    except ValueError:
+        return await update.effective_message.reply_text("Bad size. e.g. /resize 800  or /resize 800x600")
+    pair = await _attached_image_bytes(update.effective_message)
+    if not pair:
+        return await update.effective_message.reply_text("Attach an image with /resize.")
+    img_bytes, _ = pair
+    msg = await update.effective_message.reply_text("Resizing…")
+    try:
+        data = {}
+        if width:  data["width"] = str(width)
+        if height: data["height"] = str(height)
+        async with httpx.AsyncClient(timeout=120) as client:
+            r = await client.post(f"{LOCAL_API}/image/resize",
+                                  files={"file": ("img.bin", img_bytes, "image/jpeg")},
+                                  data=data)
+        if r.status_code != 200:
+            return await _safe_edit(msg, f"Resize failed ({r.status_code}).")
+        try: await msg.delete()
+        except Exception: pass
+        ct = r.headers.get("content-type", "image/png")
+        ext = ct.split("/")[-1].split(";")[0]
+        await update.effective_message.reply_document(io.BytesIO(r.content), filename=f"resized.{ext}")
+    except Exception as e:
+        await _safe_edit(msg, f"Resize failed: {e}")
+
+
+async def cmd_convert(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _allowed(update):
+        return await _deny(update)
+    if not ctx.args:
+        return await update.effective_message.reply_text("Usage: /convert <png|jpg|webp|gif|bmp>")
+    fmt = ctx.args[0].lower()
+    pair = await _attached_image_bytes(update.effective_message)
+    if not pair:
+        return await update.effective_message.reply_text("Attach an image with /convert.")
+    img_bytes, _ = pair
+    msg = await update.effective_message.reply_text(f"Converting → {fmt}…")
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            r = await client.post(f"{LOCAL_API}/image/convert",
+                                  files={"file": ("img.bin", img_bytes, "image/jpeg")},
+                                  data={"target": fmt})
+        if r.status_code != 200:
+            return await _safe_edit(msg, f"Convert failed ({r.status_code}).")
+        try: await msg.delete()
+        except Exception: pass
+        ext = "jpg" if fmt in ("jpg", "jpeg") else fmt
+        await update.effective_message.reply_document(io.BytesIO(r.content), filename=f"image.{ext}")
+    except Exception as e:
+        await _safe_edit(msg, f"Convert failed: {e}")
+
+
+async def cmd_rotate(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _allowed(update):
+        return await _deny(update)
+    deg = 90
+    if ctx.args:
+        try:
+            deg = int(ctx.args[0])
+        except ValueError:
+            return await update.effective_message.reply_text("Usage: /rotate <90|180|270>")
+    if deg not in (90, 180, 270):
+        return await update.effective_message.reply_text("degrees must be 90, 180, or 270.")
+    pair = await _attached_pdf_bytes(update.effective_message)
+    if not pair:
+        return await update.effective_message.reply_text("Attach a PDF with /rotate.")
+    pdf_bytes, name = pair
+    msg = await update.effective_message.reply_text(f"Rotating {deg}°…")
+    try:
+        async with httpx.AsyncClient(timeout=180) as client:
+            r = await client.post(f"{LOCAL_API}/pdf/rotate",
+                                  files={"file": (name, pdf_bytes, "application/pdf")},
+                                  data={"degrees": str(deg)})
+        if r.status_code != 200:
+            return await _safe_edit(msg, f"Rotate failed ({r.status_code}).")
+        try: await msg.delete()
+        except Exception: pass
+        out_name = re.sub(r"\.pdf$", f"-rot{deg}.pdf", name, flags=re.I) or "rotated.pdf"
+        await update.effective_message.reply_document(io.BytesIO(r.content), filename=out_name)
+    except Exception as e:
+        await _safe_edit(msg, f"Rotate failed: {e}")
+
+
+async def cmd_gif(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not _allowed(update):
+        return await _deny(update)
+    duration = 5.0
+    start = 0.0
+    if ctx.args:
+        try:
+            duration = float(ctx.args[0])
+            if len(ctx.args) >= 2:
+                start = float(ctx.args[1])
+        except ValueError:
+            pass
+    video_bytes = await _attached_video_bytes(update.effective_message)
+    if not video_bytes:
+        return await update.effective_message.reply_text("Attach a video with /gif. Usage: /gif [duration_sec] [start_sec]")
+    msg = await update.effective_message.reply_text(f"Making GIF ({duration}s)…")
+    try:
+        async with httpx.AsyncClient(timeout=300) as client:
+            r = await client.post(f"{LOCAL_API}/media/gif",
+                                  files={"file": ("clip.mp4", video_bytes, "video/mp4")},
+                                  data={"duration": str(duration), "start": str(start), "width": "480"})
+        if r.status_code != 200:
+            return await _safe_edit(msg, f"GIF failed ({r.status_code}).")
+        try: await msg.delete()
+        except Exception: pass
+        await update.effective_message.reply_animation(io.BytesIO(r.content), filename="clip.gif")
+    except Exception as e:
+        await _safe_edit(msg, f"GIF failed: {e}")
+
+
 _COMMANDS = [
-    BotCommand("start", "Show help"),
-    BotCommand("help",  "Show help"),
-    BotCommand("ocr",   "Extract text from an image"),
-    BotCommand("rmbg",  "Remove image background"),
-    BotCommand("emoji", "Make a square emoji from an image"),
-    BotCommand("pdf",   "Convert a PDF to DOCX"),
-    BotCommand("qr",    "Generate a QR code (/qr <text>)"),
-    BotCommand("vid",   "Download video MP4 (/vid <url>)"),
-    BotCommand("aud",   "Download audio MP3 (/aud <url>)"),
+    BotCommand("start",    "Show help"),
+    BotCommand("help",     "Show help"),
+    BotCommand("ocr",      "Extract text from image"),
+    BotCommand("rmbg",     "Remove image background"),
+    BotCommand("emoji",    "Make emoji from image"),
+    BotCommand("compress", "Compress JPEG (/compress 75)"),
+    BotCommand("resize",   "Resize image (/resize 800x600)"),
+    BotCommand("convert",  "Convert image format (/convert webp)"),
+    BotCommand("pdf",      "Convert PDF to DOCX"),
+    BotCommand("rotate",   "Rotate PDF (/rotate 90)"),
+    BotCommand("md2pdf",   "Markdown → PDF (/md2pdf body)"),
+    BotCommand("gif",      "Video → GIF (attach video)"),
+    BotCommand("qr",       "Generate QR (/qr text)"),
+    BotCommand("vid",      "Download video (/vid url)"),
+    BotCommand("aud",      "Download audio (/aud url)"),
+    BotCommand("tr",       "Translate (/tr lang text)"),
 ]
 
 
@@ -339,6 +591,13 @@ def build_app(token: str):
     app.add_handler(CommandHandler("rmbg", cmd_rmbg))
     app.add_handler(CommandHandler("emoji", cmd_emoji))
     app.add_handler(CommandHandler("pdf", cmd_pdf))
+    app.add_handler(CommandHandler("tr", cmd_tr))
+    app.add_handler(CommandHandler("md2pdf", cmd_md2pdf))
+    app.add_handler(CommandHandler("compress", cmd_compress))
+    app.add_handler(CommandHandler("resize", cmd_resize))
+    app.add_handler(CommandHandler("convert", cmd_convert))
+    app.add_handler(CommandHandler("rotate", cmd_rotate))
+    app.add_handler(CommandHandler("gif", cmd_gif))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
     app.add_handler(MessageHandler(filters.Document.ALL, on_document))
     return app

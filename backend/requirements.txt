@@ -12,3 +12,4 @@ Pillow>=12.2
 qrcode[pil]==8.2
 pytesseract==0.3.13
 python-telegram-bot==21.6
+markdown==3.7

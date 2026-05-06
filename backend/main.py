@@ -8,9 +8,11 @@ import shutil
 import subprocess
 import time
 import uuid
+import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import List, Optional
 from urllib.parse import quote
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -474,8 +476,12 @@ def health():
             "pdf": "libreoffice-headless",
             "media": "yt-dlp",
             "image": f"rembg-{REMBG_MODEL}",
+            "image_edit": "pillow",
             "ocr": "tesseract" if TESSERACT_BIN else "missing",
             "qr": "qrcode",
+            "gif": "ffmpeg" if FFMPEG_DIR else "missing",
+            "md2pdf": "libreoffice+markdown",
+            "translate": "google" if GOOGLE_TRANSLATE_KEY else "mymemory",
         },
         "workers": NUM_WORKERS,
         "chunk_timeout_sec": CHUNK_TIMEOUT_SEC,
@@ -620,6 +626,468 @@ async def media_download(req: MediaDownload):
         filename=out_path.name,
         background=BackgroundTask(lambda: shutil.rmtree(job_dir, ignore_errors=True)),
     )
+
+
+# ── PDF tools (merge / split / rotate) ───────────────
+def _pdf_merge_blocking(pdf_blobs: list[bytes]) -> bytes:
+    out = fitz.open()
+    try:
+        for blob in pdf_blobs:
+            with fitz.open(stream=blob, filetype="pdf") as src:
+                out.insert_pdf(src)
+        return out.tobytes()
+    finally:
+        out.close()
+
+
+def _parse_ranges(spec: str, n_pages: int) -> list[tuple[int, int]]:
+    """Parse '1-3,5,7-10' into [(0,2),(4,4),(6,9)] (0-indexed inclusive)."""
+    out: list[tuple[int, int]] = []
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            a, b = part.split("-", 1)
+            start, end = int(a) - 1, int(b) - 1
+        else:
+            start = end = int(part) - 1
+        if start < 0 or end >= n_pages or start > end:
+            raise ValueError(f"Invalid range: {part}")
+        out.append((start, end))
+    if not out:
+        raise ValueError("No ranges provided.")
+    return out
+
+
+def _pdf_split_blocking(pdf_blob: bytes, ranges_spec: str) -> bytes:
+    with fitz.open(stream=pdf_blob, filetype="pdf") as src:
+        ranges = _parse_ranges(ranges_spec, src.page_count)
+        zbuf = io.BytesIO()
+        with zipfile.ZipFile(zbuf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for i, (start, end) in enumerate(ranges, 1):
+                sub = fitz.open()
+                try:
+                    sub.insert_pdf(src, from_page=start, to_page=end)
+                    zf.writestr(f"pages_{start+1}-{end+1}.pdf", sub.tobytes())
+                finally:
+                    sub.close()
+        return zbuf.getvalue()
+
+
+def _pdf_rotate_blocking(pdf_blob: bytes, degrees: int) -> bytes:
+    with fitz.open(stream=pdf_blob, filetype="pdf") as src:
+        for page in src:
+            page.set_rotation((page.rotation + degrees) % 360)
+        return src.tobytes()
+
+
+@app.post("/pdf/merge")
+async def pdf_merge(files: List[UploadFile] = File(...)):
+    if len(files) < 2:
+        raise HTTPException(400, "Send at least 2 PDFs.")
+    blobs: list[bytes] = []
+    for f in files:
+        if not (f.filename or "").lower().endswith(".pdf"):
+            raise HTTPException(400, f"Not a PDF: {f.filename}")
+        data = await f.read()
+        if not data:
+            raise HTTPException(400, f"Empty file: {f.filename}")
+        if len(data) > MAX_BYTES:
+            raise HTTPException(413, f"{f.filename} exceeds 50 MB.")
+        blobs.append(data)
+    try:
+        out = await asyncio.to_thread(_pdf_merge_blocking, blobs)
+    except Exception as e:
+        log.exception("pdf merge failed")
+        raise HTTPException(500, f"{e}")
+    return StreamingResponse(
+        io.BytesIO(out),
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="merged.pdf"'},
+    )
+
+
+@app.post("/pdf/split")
+async def pdf_split(file: UploadFile = File(...), ranges: str = Form(...)):
+    if not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(400, "Only PDFs accepted.")
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Empty file.")
+    if len(data) > MAX_BYTES:
+        raise HTTPException(413, "File exceeds 50 MB.")
+    try:
+        out = await asyncio.to_thread(_pdf_split_blocking, data, ranges)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        log.exception("pdf split failed")
+        raise HTTPException(500, f"{e}")
+    return StreamingResponse(
+        io.BytesIO(out),
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="split.zip"'},
+    )
+
+
+@app.post("/pdf/rotate")
+async def pdf_rotate(file: UploadFile = File(...), degrees: int = Form(90)):
+    if degrees not in {90, 180, 270}:
+        raise HTTPException(400, "degrees must be 90, 180, or 270.")
+    if not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(400, "Only PDFs accepted.")
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Empty file.")
+    if len(data) > MAX_BYTES:
+        raise HTTPException(413, "File exceeds 50 MB.")
+    try:
+        out = await asyncio.to_thread(_pdf_rotate_blocking, data, degrees)
+    except Exception as e:
+        log.exception("pdf rotate failed")
+        raise HTTPException(500, f"{e}")
+    return StreamingResponse(
+        io.BytesIO(out),
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="rotated.pdf"'},
+    )
+
+
+# ── Image tools (compress / resize / convert) ────────
+_IMAGE_FMT_ALIASES = {"jpg": "JPEG", "jpeg": "JPEG", "png": "PNG", "webp": "WEBP", "gif": "GIF", "bmp": "BMP"}
+
+
+def _open_image(data: bytes) -> Image.Image:
+    img = Image.open(io.BytesIO(data))
+    img.load()
+    return img
+
+
+def _image_compress_blocking(data: bytes, quality: int) -> bytes:
+    img = _open_image(data)
+    if img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=int(quality), optimize=True, progressive=True)
+    return buf.getvalue()
+
+
+def _image_resize_blocking(data: bytes, width: Optional[int], height: Optional[int]) -> bytes:
+    img = _open_image(data)
+    w, h = img.size
+    if width and not height:
+        height = int(h * (width / w))
+    elif height and not width:
+        width = int(w * (height / h))
+    elif not width and not height:
+        raise ValueError("Provide width and/or height.")
+    target = (max(1, int(width)), max(1, int(height)))
+    img = img.resize(target, Image.LANCZOS)
+    buf = io.BytesIO()
+    fmt = (img.format or "PNG").upper()
+    if fmt not in {"PNG", "JPEG", "WEBP"}:
+        fmt = "PNG"
+    if fmt == "JPEG" and img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+    img.save(buf, format=fmt, optimize=True)
+    return buf.getvalue(), fmt.lower()
+
+
+def _image_convert_blocking(data: bytes, target_fmt: str) -> bytes:
+    pil_fmt = _IMAGE_FMT_ALIASES.get(target_fmt.lower())
+    if not pil_fmt:
+        raise ValueError(f"Unsupported format: {target_fmt}")
+    img = _open_image(data)
+    if pil_fmt in {"JPEG", "BMP"} and img.mode in ("RGBA", "P", "LA"):
+        img = img.convert("RGB")
+    buf = io.BytesIO()
+    save_kwargs = {"optimize": True} if pil_fmt in {"JPEG", "PNG"} else {}
+    if pil_fmt == "JPEG":
+        save_kwargs["quality"] = 92
+    img.save(buf, format=pil_fmt, **save_kwargs)
+    return buf.getvalue()
+
+
+@app.post("/image/compress")
+async def image_compress(file: UploadFile = File(...), quality: int = Form(75)):
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(400, "Only image files are accepted.")
+    if not (1 <= quality <= 100):
+        raise HTTPException(400, "quality must be 1–100.")
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Empty file.")
+    if len(data) > MAX_IMAGE_BYTES:
+        raise HTTPException(413, "Image exceeds 25 MB.")
+    try:
+        out = await asyncio.to_thread(_image_compress_blocking, data, quality)
+    except Exception as e:
+        log.exception("compress failed")
+        raise HTTPException(500, f"{e}")
+    name = (Path(file.filename or "image").stem or "image") + ".jpg"
+    return StreamingResponse(
+        io.BytesIO(out),
+        media_type="image/jpeg",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
+@app.post("/image/resize")
+async def image_resize(
+    file: UploadFile = File(...),
+    width: Optional[int] = Form(None),
+    height: Optional[int] = Form(None),
+):
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(400, "Only image files are accepted.")
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Empty file.")
+    if len(data) > MAX_IMAGE_BYTES:
+        raise HTTPException(413, "Image exceeds 25 MB.")
+    try:
+        out, fmt = await asyncio.to_thread(_image_resize_blocking, data, width, height)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        log.exception("resize failed")
+        raise HTTPException(500, f"{e}")
+    ext = "jpg" if fmt == "jpeg" else fmt
+    name = (Path(file.filename or "image").stem or "image") + f"-resized.{ext}"
+    return StreamingResponse(
+        io.BytesIO(out),
+        media_type=f"image/{fmt}",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
+@app.post("/image/convert")
+async def image_convert(file: UploadFile = File(...), target: str = Form(...)):
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(400, "Only image files are accepted.")
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Empty file.")
+    if len(data) > MAX_IMAGE_BYTES:
+        raise HTTPException(413, "Image exceeds 25 MB.")
+    try:
+        out = await asyncio.to_thread(_image_convert_blocking, data, target)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        log.exception("convert failed")
+        raise HTTPException(500, f"{e}")
+    ext = "jpg" if target.lower() in ("jpg", "jpeg") else target.lower()
+    name = (Path(file.filename or "image").stem or "image") + f".{ext}"
+    return StreamingResponse(
+        io.BytesIO(out),
+        media_type=f"image/{ext}",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
+# ── Video → GIF (ffmpeg) ─────────────────────────────
+def _video_to_gif_blocking(data: bytes, start: float, duration: float, width: int) -> bytes:
+    # ffmpeg via subprocess; uses palette generation for smaller/cleaner GIFs.
+    job = TMP_DIR / uuid.uuid4().hex
+    job.mkdir(parents=True, exist_ok=True)
+    try:
+        in_path = job / "in.bin"
+        in_path.write_bytes(data)
+        palette = job / "pal.png"
+        out_path = job / "out.gif"
+        ffmpeg = "ffmpeg"
+        if FFMPEG_DIR:
+            ffmpeg = str(Path(FFMPEG_DIR) / ("ffmpeg.exe" if IS_WINDOWS else "ffmpeg"))
+        common = [ffmpeg, "-y", "-ss", str(start), "-t", str(duration), "-i", str(in_path)]
+        # Pass 1: palette
+        subprocess.run(
+            common + ["-vf", f"fps=12,scale={width}:-1:flags=lanczos,palettegen", str(palette)],
+            check=True, capture_output=True, timeout=120,
+            creationflags=CREATE_NO_WINDOW,
+        )
+        # Pass 2: gif
+        subprocess.run(
+            common + ["-i", str(palette), "-lavfi",
+                      f"fps=12,scale={width}:-1:flags=lanczos [x]; [x][1:v] paletteuse", str(out_path)],
+            check=True, capture_output=True, timeout=120,
+            creationflags=CREATE_NO_WINDOW,
+        )
+        return out_path.read_bytes()
+    finally:
+        shutil.rmtree(job, ignore_errors=True)
+
+
+@app.post("/media/gif")
+async def media_gif(
+    file: UploadFile = File(...),
+    start: float = Form(0.0),
+    duration: float = Form(5.0),
+    width: int = Form(480),
+):
+    if not file.content_type or not (
+        file.content_type.startswith("video/") or file.content_type.startswith("image/")
+    ):
+        raise HTTPException(400, "Only video files are accepted.")
+    if duration <= 0 or duration > 30:
+        raise HTTPException(400, "duration must be 0–30 seconds.")
+    if width < 64 or width > 1280:
+        raise HTTPException(400, "width must be 64–1280 px.")
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Empty file.")
+    if len(data) > 50 * 1024 * 1024:
+        raise HTTPException(413, "Video exceeds 50 MB.")
+    try:
+        out = await asyncio.to_thread(_video_to_gif_blocking, data, start, duration, width)
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(400, f"ffmpeg failed: {(e.stderr or b'').decode(errors='ignore')[:300]}")
+    except Exception as e:
+        log.exception("gif failed")
+        raise HTTPException(500, f"{e}")
+    name = (Path(file.filename or "clip").stem or "clip") + ".gif"
+    return StreamingResponse(
+        io.BytesIO(out),
+        media_type="image/gif",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
+# ── Markdown → PDF (LibreOffice) ─────────────────────
+class MarkdownReq(BaseModel):
+    text: str
+    title: str = "Document"
+
+
+def _md_to_pdf_blocking(md_text: str, title: str) -> bytes:
+    import markdown as md_mod
+    body_html = md_mod.markdown(md_text, extensions=["extra", "fenced_code", "tables"])
+    full_html = f"""<!doctype html>
+<html><head><meta charset='utf-8'><title>{title}</title>
+<style>
+body {{ font-family: Arial, sans-serif; font-size: 12pt; line-height: 1.55; padding: 24px; max-width: 720px; }}
+pre, code {{ font-family: monospace; background: #f4f4f4; padding: 2px 4px; border-radius: 3px; }}
+pre {{ padding: 8px; overflow-x: auto; }}
+table {{ border-collapse: collapse; margin: 1em 0; }}
+th, td {{ border: 1px solid #999; padding: 4px 8px; }}
+h1, h2, h3 {{ color: #1a365d; }}
+blockquote {{ border-left: 3px solid #888; margin: 0; padding-left: 12px; color: #555; }}
+</style></head>
+<body>{body_html}</body></html>"""
+    job = TMP_DIR / uuid.uuid4().hex
+    job.mkdir(parents=True, exist_ok=True)
+    try:
+        html_path = job / "doc.html"
+        html_path.write_text(full_html, encoding="utf-8")
+        profile = job / "lo_profile"
+        profile.mkdir()
+        profile_url = profile.absolute().as_uri()
+        cmd = [
+            SOFFICE,
+            f"-env:UserInstallation={profile_url}",
+            "--headless", "--norestore", "--nofirststartwizard", "--nologo",
+            "--convert-to", "pdf", "--outdir", str(job), str(html_path),
+        ]
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=180,
+            creationflags=CREATE_NO_WINDOW, env=_soffice_env(),
+        )
+        if result.returncode != 0:
+            raise RuntimeError((result.stderr or result.stdout or "").strip()[:500])
+        out_path = job / "doc.pdf"
+        if not out_path.exists():
+            raise RuntimeError("LibreOffice produced no PDF.")
+        return out_path.read_bytes()
+    finally:
+        shutil.rmtree(job, ignore_errors=True)
+
+
+@app.post("/doc/md2pdf")
+async def doc_md2pdf(req: MarkdownReq):
+    if not req.text.strip():
+        raise HTTPException(400, "text is required.")
+    if len(req.text) > 200_000:
+        raise HTTPException(400, "Markdown too long (max 200k chars).")
+    try:
+        out = await asyncio.to_thread(_md_to_pdf_blocking, req.text, req.title or "Document")
+    except Exception as e:
+        log.exception("md2pdf failed")
+        raise HTTPException(500, f"{e}")
+    safe_title = re.sub(r"[^A-Za-z0-9._-]+", "_", req.title or "document").strip("_") or "document"
+    return StreamingResponse(
+        io.BytesIO(out),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{safe_title}.pdf"'},
+    )
+
+
+# ── Translate (Google API if key, else MyMemory free) ─
+class TranslateReq(BaseModel):
+    text: str
+    target: str = "en"
+    source: str = "auto"
+
+
+GOOGLE_TRANSLATE_KEY = os.environ.get("GOOGLE_TRANSLATE_API_KEY", "").strip()
+
+
+async def _translate_google(text: str, target: str, source: str) -> str:
+    import httpx
+    # Google v2: POST with form-urlencoded body. Using params would send POST
+    # with empty body and Google rejects with 403/411.
+    data = {"q": text, "target": target, "format": "text"}
+    if source and source != "auto":
+        data["source"] = source
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(
+            "https://translation.googleapis.com/language/translate/v2",
+            params={"key": GOOGLE_TRANSLATE_KEY},
+            data=data,
+        )
+    if r.status_code != 200:
+        raise RuntimeError(f"Google API {r.status_code}: {r.text[:300]}")
+    return r.json()["data"]["translations"][0]["translatedText"]
+
+
+async def _translate_mymemory(text: str, target: str, source: str) -> str:
+    import httpx
+    pair = f"{source if source and source != 'auto' else 'auto'}|{target}"
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.get("https://api.mymemory.translated.net/get",
+                             params={"q": text, "langpair": pair})
+    r.raise_for_status()
+    j = r.json()
+    if j.get("responseStatus") not in (200, "200"):
+        raise RuntimeError(j.get("responseDetails", "translate failed"))
+    return j["responseData"]["translatedText"]
+
+
+@app.post("/translate")
+async def translate(req: TranslateReq):
+    if not req.text.strip():
+        raise HTTPException(400, "text is required.")
+    if len(req.text) > 5000:
+        raise HTTPException(400, "text too long (max 5000 chars).")
+    engine = None
+    last_err = None
+    # Try Google first if a key is set; on failure (API not enabled / quota /
+    # billing) silently fall back to MyMemory so the endpoint stays usable.
+    if GOOGLE_TRANSLATE_KEY:
+        try:
+            translated = await _translate_google(req.text, req.target, req.source)
+            engine = "google"
+        except Exception as e:
+            last_err = e
+            log.warning("google translate failed, falling back: %s", e)
+    if engine is None:
+        try:
+            translated = await _translate_mymemory(req.text, req.target, req.source)
+            engine = "mymemory"
+        except Exception as e:
+            log.exception("translate failed")
+            raise HTTPException(500, f"{last_err or e}")
+    return {"text": translated, "engine": engine, "target": req.target, "source": req.source}
 
 
 # ── PDF endpoint (unchanged) ─────────────────────────

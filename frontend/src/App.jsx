@@ -215,14 +215,52 @@ const IconQR = (p) => (
     <path d="M14 14h3M20 14v3M14 17v3M17 17h3M14 21h3" />
   </Icon>
 );
+const IconLanguage = (p) => (
+  <Icon {...p}>
+    <path d="M4 5h7" /><path d="M9 3v2c0 4.418 -2.239 8 -5 8" />
+    <path d="M5 9c0 2.144 2.952 3.908 6.7 4" />
+    <path d="M12 20l4 -9l4 9" /><path d="M19.1 18h-6.2" />
+  </Icon>
+);
+const IconMd = (p) => (
+  <Icon {...p}>
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <path d="M7 15v-6l2 2l2 -2v6" /><path d="M14 13l2 2l2 -2" /><path d="M16 9v6" />
+  </Icon>
+);
+const IconResize = (p) => (
+  <Icon {...p}>
+    <path d="M4 8v-4h4" /><path d="M20 16v4h-4" />
+    <path d="M4 4l16 16" />
+  </Icon>
+);
+const IconGif = (p) => (
+  <Icon {...p}>
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <path d="M7 9v6" /><path d="M11 9h-2v6h2" /><path d="M11 12h-2" />
+    <path d="M14 15v-6h2" /><path d="M14 12h2" />
+  </Icon>
+);
+const IconPdfTool = (p) => (
+  <Icon {...p}>
+    <path d="M14 3v4a1 1 0 0 0 1 1h4" />
+    <path d="M5 8v-3a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2h-3" />
+    <path d="M3 13v6" /><path d="M7 13v6" /><path d="M3 16h4" />
+  </Icon>
+);
 
 /* ── App shell ───────────────────────────────────────── */
 const TOOLS = [
   { id: 'pdf',     label: 'PDF → Word',       desc: 'Convert PDF to Word',           Icon: IconCloudUpload },
+  { id: 'pdfedit', label: 'PDF Tools',        desc: 'Merge / split / rotate PDFs',   Icon: IconPdfTool },
+  { id: 'md',      label: 'Markdown → PDF',   desc: 'Render markdown text to a PDF', Icon: IconMd },
   { id: 'media',   label: 'Media Download',   desc: 'Download video/audio from URL', Icon: IconDownload },
+  { id: 'gif',     label: 'Video → GIF',      desc: 'Make a short GIF from a clip',  Icon: IconGif },
   { id: 'remove',  label: 'Remove Background', desc: 'Cut out the background of any image', Icon: IconScissors },
   { id: 'emoji',   label: 'Create Emoji',     desc: 'Make a 128/256/512 px emoji from an image', Icon: IconSparkles },
   { id: 'ocr',     label: 'Extract Text',     desc: 'Pull text out of any image (OCR)', Icon: IconText },
+  { id: 'imgedit', label: 'Image Edit',       desc: 'Compress, resize, or convert',   Icon: IconResize },
+  { id: 'translate', label: 'Translate',      desc: 'Translate text between languages', Icon: IconLanguage },
   { id: 'qr',      label: 'QR Generator',     desc: 'Generate a QR code from text or URL', Icon: IconQR },
 ];
 
@@ -235,8 +273,11 @@ const SIDEBAR_GROUPS = [
         id: 'documents',
         label: 'Documents',
         Icon: IconFile,
+        badge: '3',
         children: [
-          { id: 'pdf',   label: 'PDF → Word' },
+          { id: 'pdf',     label: 'PDF → Word' },
+          { id: 'pdfedit', label: 'PDF Tools' },
+          { id: 'md',      label: 'Markdown → PDF' },
         ],
       },
       {
@@ -244,10 +285,11 @@ const SIDEBAR_GROUPS = [
         id: 'media-group',
         label: 'Media',
         Icon: IconDownload,
-        badge: '2',
+        badge: '3',
         children: [
           { id: 'media-video', label: 'Video Download', target: 'media' },
           { id: 'media-audio', label: 'Audio Download', target: 'media' },
+          { id: 'gif',         label: 'Video → GIF' },
         ],
       },
       {
@@ -255,11 +297,12 @@ const SIDEBAR_GROUPS = [
         id: 'images-group',
         label: 'Images',
         Icon: IconImage,
-        badge: '3',
+        badge: '4',
         children: [
-          { id: 'remove', label: 'Remove Background' },
-          { id: 'emoji',  label: 'Create Emoji' },
-          { id: 'ocr',    label: 'Extract Text' },
+          { id: 'remove',  label: 'Remove Background' },
+          { id: 'emoji',   label: 'Create Emoji' },
+          { id: 'ocr',     label: 'Extract Text' },
+          { id: 'imgedit', label: 'Image Edit' },
         ],
       },
       {
@@ -267,9 +310,10 @@ const SIDEBAR_GROUPS = [
         id: 'gen-group',
         label: 'Generators',
         Icon: IconSparkles,
-        badge: '1',
+        badge: '2',
         children: [
-          { id: 'qr', label: 'QR Generator' },
+          { id: 'qr',        label: 'QR Generator' },
+          { id: 'translate', label: 'Translate' },
         ],
       },
       { type: 'item', id: 'likes', label: 'Likes', Icon: IconHeart, soon: true },
@@ -287,12 +331,17 @@ const SIDEBAR_GROUPS = [
 ];
 
 const TAB_META = {
-  pdf:    { title: 'PDF → Word',       breadcrumb: ['Tools', 'Documents'] },
-  media:  { title: 'Media Download',   breadcrumb: ['Tools', 'Media'] },
-  remove: { title: 'Remove Background', breadcrumb: ['Tools', 'Images'] },
-  emoji:  { title: 'Create Emoji',     breadcrumb: ['Tools', 'Images'] },
-  ocr:    { title: 'Extract Text',     breadcrumb: ['Tools', 'Images'] },
-  qr:     { title: 'QR Generator',     breadcrumb: ['Tools', 'Generators'] },
+  pdf:       { title: 'PDF → Word',        breadcrumb: ['Tools', 'Documents'] },
+  pdfedit:   { title: 'PDF Tools',         breadcrumb: ['Tools', 'Documents'] },
+  md:        { title: 'Markdown → PDF',    breadcrumb: ['Tools', 'Documents'] },
+  media:     { title: 'Media Download',    breadcrumb: ['Tools', 'Media'] },
+  gif:       { title: 'Video → GIF',       breadcrumb: ['Tools', 'Media'] },
+  remove:    { title: 'Remove Background', breadcrumb: ['Tools', 'Images'] },
+  emoji:     { title: 'Create Emoji',      breadcrumb: ['Tools', 'Images'] },
+  ocr:       { title: 'Extract Text',      breadcrumb: ['Tools', 'Images'] },
+  imgedit:   { title: 'Image Edit',        breadcrumb: ['Tools', 'Images'] },
+  qr:        { title: 'QR Generator',      breadcrumb: ['Tools', 'Generators'] },
+  translate: { title: 'Translate',         breadcrumb: ['Tools', 'Generators'] },
 };
 
 export default function App() {
@@ -343,7 +392,12 @@ export default function App() {
               {tab === 'media'  && <MediaPanel />}
               {tab === 'remove' && <ImagePanel mode="remove" />}
               {tab === 'emoji'  && <ImagePanel mode="emoji" />}
-              {tab === 'ocr'    && <OCRPanel />}
+              {tab === 'ocr'       && <OCRPanel />}
+              {tab === 'imgedit'   && <ImageEditPanel />}
+              {tab === 'pdfedit'   && <PdfToolsPanel />}
+              {tab === 'md'        && <MarkdownPdfPanel />}
+              {tab === 'gif'       && <GifPanel />}
+              {tab === 'translate' && <TranslatePanel />}
               {tab === 'qr'     && <QRPanel />}
             </div>
           </div>
@@ -930,6 +984,593 @@ function OCRPanel() {
     </>
   );
 }
+
+/* ── Image Edit (compress / resize / convert) ────────── */
+function ImageEditPanel() {
+  const [mode, setMode] = useState('compress'); // compress | resize | convert
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [outBlob, setOutBlob] = useState(null);
+  const [outName, setOutName] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [quality, setQuality] = useState(75);
+  const [width, setWidth] = useState(800);
+  const [height, setHeight] = useState('');
+  const [target, setTarget] = useState('webp');
+  const [dragOver, setDragOver] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => () => {
+    if (preview) URL.revokeObjectURL(preview);
+  }, [preview]);
+
+  const reset = () => {
+    if (preview) URL.revokeObjectURL(preview);
+    setFile(null); setPreview(null); setOutBlob(null); setOutName(null);
+    setError(''); setBusy(false);
+    if (inputRef.current) inputRef.current.value = '';
+  };
+
+  const setNewFile = (f) => {
+    if (!f) return;
+    setError('');
+    if (!f.type.startsWith('image/')) { setError('Only image files are accepted.'); return; }
+    if (f.size > IMG_MAX_BYTES)        { setError('Image exceeds 25 MB.');           return; }
+    if (preview) URL.revokeObjectURL(preview);
+    setFile(f);
+    setPreview(URL.createObjectURL(f));
+    setOutBlob(null); setOutName(null);
+  };
+
+  const onDrop = useCallback((e) => {
+    e.preventDefault(); setDragOver(false);
+    setNewFile(e.dataTransfer.files?.[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const run = async () => {
+    if (!file) return;
+    setBusy(true); setError('');
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      let url;
+      if (mode === 'compress') {
+        url = `${API_BASE}/image/compress`;
+        form.append('quality', String(Math.max(1, Math.min(100, Number(quality) || 75))));
+      } else if (mode === 'resize') {
+        url = `${API_BASE}/image/resize`;
+        if (width)  form.append('width',  String(width));
+        if (height) form.append('height', String(height));
+      } else {
+        url = `${API_BASE}/image/convert`;
+        form.append('target', target);
+      }
+      const r = await fetch(url, { method: 'POST', body: form });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.detail || `Failed (${r.status})`);
+      }
+      const blob = await r.blob();
+      const fallback = (file.name.replace(/\.[^.]+$/, '') || 'image') +
+        (mode === 'compress' ? '.jpg'
+         : mode === 'resize' ? `-resized.${(blob.type.split('/')[1] || 'png').split(';')[0]}`
+         : `.${target === 'jpeg' ? 'jpg' : target}`);
+      const name = filenameFromContentDisposition(r.headers.get('Content-Disposition'), fallback);
+      setOutBlob(blob); setOutName(name);
+    } catch (e) { setError(e.message || String(e)); }
+    finally { setBusy(false); }
+  };
+
+  const download = () => { if (outBlob && outName) triggerDownload(outBlob, outName); };
+
+  return (
+    <>
+      <div className="head">
+        <div className="head-icon"><IconResize size={20} strokeWidth={2.25} /></div>
+        <div className="head-text">
+          <h2>Image Edit</h2>
+          <p>Compress to JPEG, resize, or convert format. Up to 25 MB.</p>
+        </div>
+        <button className="ghost-btn" onClick={reset} aria-label="Clear" disabled={!file && !error}>
+          <IconX size={18} />
+        </button>
+      </div>
+
+      <div className="seg" style={{ marginBottom: 12 }}>
+        {[
+          { v: 'compress', label: 'Compress' },
+          { v: 'resize',   label: 'Resize' },
+          { v: 'convert',  label: 'Convert' },
+        ].map((o) => (
+          <button key={o.v} className={`seg-opt${mode === o.v ? ' active' : ''}`} onClick={() => { setMode(o.v); setOutBlob(null); }}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+
+      {!file ? (
+        <div
+          className={`dropzone${dragOver ? ' drag' : ''}`}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={onDrop}
+        >
+          <IconImage size={32} strokeWidth={1.5} className="dz-icon" />
+          <div className="dz-title">Choose an image or drag &amp; drop it here.</div>
+          <div className="dz-hint">JPG, PNG, WebP — up to 25 MB.</div>
+          <button className="browse-btn" type="button" onClick={() => inputRef.current?.click()}>Browse Image</button>
+          <input ref={inputRef} type="file" accept="image/*" hidden
+            onChange={(e) => { setNewFile(e.target.files?.[0]); e.target.value = ''; }} />
+        </div>
+      ) : (
+        <div className="img-compare">
+          <figure>
+            <figcaption>Original — {formatSize(file.size)}</figcaption>
+            <div className="img-thumb"><img src={preview} alt="" /></div>
+          </figure>
+          <figure>
+            <figcaption>Result {outBlob ? `— ${formatSize(outBlob.size)}` : ''}</figcaption>
+            <div className="img-thumb checker">
+              {outBlob ? (
+                <img src={URL.createObjectURL(outBlob)} alt="" />
+              ) : busy ? (
+                <span className="img-placeholder"><IconLoader size={20} className="spin" /> Working…</span>
+              ) : (
+                <span className="img-placeholder">Click run below</span>
+              )}
+            </div>
+          </figure>
+        </div>
+      )}
+
+      {file && (
+        <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+          {mode === 'compress' && (
+            <>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                Quality: <input type="range" min="1" max="100" value={quality} onChange={(e) => setQuality(Number(e.target.value))} />
+                <span style={{ width: 28 }}>{quality}</span>
+              </label>
+            </>
+          )}
+          {mode === 'resize' && (
+            <>
+              <label>Width <input type="number" min="1" value={width} onChange={(e) => setWidth(e.target.value)} style={{ width: 90 }} /></label>
+              <label>Height <input type="number" min="1" value={height} onChange={(e) => setHeight(e.target.value)} placeholder="auto" style={{ width: 90 }} /></label>
+            </>
+          )}
+          {mode === 'convert' && (
+            <div className="seg">
+              {['png','jpg','webp','gif','bmp'].map((f) => (
+                <button key={f} className={`seg-opt${target === f ? ' active' : ''}`} onClick={() => setTarget(f)}>{f.toUpperCase()}</button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {error && <div className="msg-err">{error}</div>}
+
+      {file && (
+        <div className="img-actions">
+          <button className="browse-btn" onClick={reset} disabled={busy}>Choose another</button>
+          {outBlob ? (
+            <button className="primary-btn" onClick={download}><IconDownload size={14} /> Download</button>
+          ) : (
+            <button className="primary-btn" onClick={run} disabled={busy}>
+              {busy ? <><IconLoader size={14} className="spin" /> Working…</> : <><IconResize size={14} /> Run</>}
+            </button>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+
+/* ── PDF Tools (merge / split / rotate) ───────────────── */
+function PdfToolsPanel() {
+  const [mode, setMode] = useState('merge');
+  const [files, setFiles] = useState([]);
+  const [ranges, setRanges] = useState('1-3');
+  const [degrees, setDegrees] = useState(90);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [outBlob, setOutBlob] = useState(null);
+  const [outName, setOutName] = useState(null);
+  const inputRef = useRef(null);
+
+  const reset = () => {
+    setFiles([]); setError(''); setOutBlob(null); setOutName(null); setBusy(false);
+    if (inputRef.current) inputRef.current.value = '';
+  };
+
+  const onSelect = (list) => {
+    setError('');
+    const arr = Array.from(list || []);
+    for (const f of arr) {
+      if (!/\.pdf$/i.test(f.name)) { setError(`Not a PDF: ${f.name}`); return; }
+      if (f.size > MAX_BYTES)      { setError(`${f.name} > 50 MB`);    return; }
+    }
+    if (mode === 'merge') setFiles((prev) => [...prev, ...arr]);
+    else                  setFiles(arr.slice(0, 1));
+    setOutBlob(null); setOutName(null);
+  };
+
+  const remove = (i) => setFiles((p) => p.filter((_, idx) => idx !== i));
+
+  const run = async () => {
+    if (!files.length) return;
+    setBusy(true); setError('');
+    try {
+      const form = new FormData();
+      let url, fallback;
+      if (mode === 'merge') {
+        if (files.length < 2) throw new Error('Select at least 2 PDFs.');
+        files.forEach((f) => form.append('files', f, f.name));
+        url = `${API_BASE}/pdf/merge`;
+        fallback = 'merged.pdf';
+      } else if (mode === 'split') {
+        form.append('file', files[0], files[0].name);
+        form.append('ranges', ranges);
+        url = `${API_BASE}/pdf/split`;
+        fallback = (files[0].name.replace(/\.pdf$/i, '') || 'split') + '.zip';
+      } else {
+        form.append('file', files[0], files[0].name);
+        form.append('degrees', String(degrees));
+        url = `${API_BASE}/pdf/rotate`;
+        fallback = (files[0].name.replace(/\.pdf$/i, '') || 'rotated') + `-rot${degrees}.pdf`;
+      }
+      const r = await fetch(url, { method: 'POST', body: form });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.detail || `Failed (${r.status})`);
+      }
+      const blob = await r.blob();
+      const name = filenameFromContentDisposition(r.headers.get('Content-Disposition'), fallback);
+      setOutBlob(blob); setOutName(name);
+    } catch (e) { setError(e.message || String(e)); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <>
+      <div className="head">
+        <div className="head-icon"><IconPdfTool size={20} strokeWidth={2.25} /></div>
+        <div className="head-text">
+          <h2>PDF Tools</h2>
+          <p>Merge multiple PDFs, split by ranges, or rotate pages.</p>
+        </div>
+        <button className="ghost-btn" onClick={reset} aria-label="Clear" disabled={!files.length && !error}>
+          <IconX size={18} />
+        </button>
+      </div>
+
+      <div className="seg" style={{ marginBottom: 12 }}>
+        {[
+          { v: 'merge',  label: 'Merge' },
+          { v: 'split',  label: 'Split' },
+          { v: 'rotate', label: 'Rotate' },
+        ].map((o) => (
+          <button key={o.v} className={`seg-opt${mode === o.v ? ' active' : ''}`}
+            onClick={() => { setMode(o.v); setFiles([]); setOutBlob(null); }}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="dropzone">
+        <IconFile size={32} strokeWidth={1.5} className="dz-icon" />
+        <div className="dz-title">{mode === 'merge' ? 'Add 2 or more PDFs' : 'Choose 1 PDF'}</div>
+        <div className="dz-hint">Up to 50 MB per file.</div>
+        <button className="browse-btn" type="button" onClick={() => inputRef.current?.click()}>
+          {mode === 'merge' ? 'Add PDFs' : 'Browse PDF'}
+        </button>
+        <input ref={inputRef} type="file" accept="application/pdf" multiple={mode === 'merge'} hidden
+          onChange={(e) => { onSelect(e.target.files); e.target.value = ''; }} />
+      </div>
+
+      {files.length > 0 && (
+        <ul style={{ marginTop: 12, listStyle: 'none', padding: 0 }}>
+          {files.map((f, i) => (
+            <li key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 8px', borderBottom: '1px solid var(--border, #eee)' }}>
+              <span>{f.name} <small>({formatSize(f.size)})</small></span>
+              <button className="ghost-btn" onClick={() => remove(i)} aria-label="Remove"><IconTrash size={14} /></button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {mode === 'split' && files.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <label>Ranges <input value={ranges} onChange={(e) => setRanges(e.target.value)} placeholder="e.g. 1-3,5,7-10" style={{ width: 220 }} /></label>
+        </div>
+      )}
+      {mode === 'rotate' && files.length > 0 && (
+        <div className="seg" style={{ marginTop: 12 }}>
+          {[90, 180, 270].map((d) => (
+            <button key={d} className={`seg-opt${degrees === d ? ' active' : ''}`} onClick={() => setDegrees(d)}>{d}°</button>
+          ))}
+        </div>
+      )}
+
+      {error && <div className="msg-err">{error}</div>}
+
+      {files.length > 0 && (
+        <div className="img-actions">
+          <button className="browse-btn" onClick={reset} disabled={busy}>Reset</button>
+          {outBlob ? (
+            <button className="primary-btn" onClick={() => triggerDownload(outBlob, outName)}>
+              <IconDownload size={14} /> Download
+            </button>
+          ) : (
+            <button className="primary-btn" onClick={run} disabled={busy || (mode === 'merge' && files.length < 2)}>
+              {busy ? <><IconLoader size={14} className="spin" /> Working…</> : <><IconPdfTool size={14} /> Run</>}
+            </button>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+
+/* ── Markdown → PDF ─────────────────────────────────── */
+function MarkdownPdfPanel() {
+  const [text, setText] = useState('# Hello\n\nThis is **markdown**.\n\n- Item 1\n- Item 2\n');
+  const [title, setTitle] = useState('Document');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const run = async () => {
+    if (!text.trim()) return;
+    setBusy(true); setError('');
+    try {
+      const r = await fetch(`${API_BASE}/doc/md2pdf`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, title }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.detail || `Failed (${r.status})`);
+      }
+      const blob = await r.blob();
+      const fallback = (title || 'document').replace(/[^A-Za-z0-9._-]+/g, '_') + '.pdf';
+      const name = filenameFromContentDisposition(r.headers.get('Content-Disposition'), fallback);
+      triggerDownload(blob, name);
+    } catch (e) { setError(e.message || String(e)); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <>
+      <div className="head">
+        <div className="head-icon"><IconMd size={20} strokeWidth={2.25} /></div>
+        <div className="head-text">
+          <h2>Markdown → PDF</h2>
+          <p>Paste markdown, get a PDF. Supports headings, lists, tables, code blocks.</p>
+        </div>
+      </div>
+      <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+        <label>Title <input value={title} onChange={(e) => setTitle(e.target.value)} style={{ width: '100%', maxWidth: 320 }} /></label>
+        <label>Markdown
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={14}
+            style={{ width: '100%', fontFamily: 'monospace', resize: 'vertical', padding: 8 }} />
+        </label>
+      </div>
+      {error && <div className="msg-err">{error}</div>}
+      <div className="img-actions">
+        <button className="primary-btn" onClick={run} disabled={busy || !text.trim()}>
+          {busy ? <><IconLoader size={14} className="spin" /> Rendering…</> : <><IconDownload size={14} /> Render PDF</>}
+        </button>
+      </div>
+    </>
+  );
+}
+
+
+/* ── Video → GIF ───────────────────────────────────── */
+function GifPanel() {
+  const [file, setFile] = useState(null);
+  const [start, setStart] = useState(0);
+  const [duration, setDuration] = useState(5);
+  const [width, setWidth] = useState(480);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [outBlob, setOutBlob] = useState(null);
+  const [outName, setOutName] = useState(null);
+  const inputRef = useRef(null);
+
+  const reset = () => {
+    setFile(null); setOutBlob(null); setOutName(null); setError(''); setBusy(false);
+    if (inputRef.current) inputRef.current.value = '';
+  };
+
+  const setNew = (f) => {
+    if (!f) return;
+    setError('');
+    if (!f.type.startsWith('video/')) { setError('Send a video file.'); return; }
+    if (f.size > 50 * 1024 * 1024)    { setError('Video exceeds 50 MB.'); return; }
+    setFile(f); setOutBlob(null); setOutName(null);
+  };
+
+  const run = async () => {
+    if (!file) return;
+    setBusy(true); setError('');
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('start',    String(start));
+      form.append('duration', String(duration));
+      form.append('width',    String(width));
+      const r = await fetch(`${API_BASE}/media/gif`, { method: 'POST', body: form });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.detail || `Failed (${r.status})`);
+      }
+      const blob = await r.blob();
+      const name = (file.name.replace(/\.[^.]+$/, '') || 'clip') + '.gif';
+      setOutBlob(blob); setOutName(name);
+    } catch (e) { setError(e.message || String(e)); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <>
+      <div className="head">
+        <div className="head-icon"><IconGif size={20} strokeWidth={2.25} /></div>
+        <div className="head-text">
+          <h2>Video → GIF</h2>
+          <p>Make a short GIF from a clip. Up to 30s, 50 MB input.</p>
+        </div>
+        <button className="ghost-btn" onClick={reset} aria-label="Clear" disabled={!file && !error}>
+          <IconX size={18} />
+        </button>
+      </div>
+
+      {!file ? (
+        <div className="dropzone" onClick={() => inputRef.current?.click()} style={{ cursor: 'pointer' }}>
+          <IconGif size={32} strokeWidth={1.5} className="dz-icon" />
+          <div className="dz-title">Choose a video</div>
+          <div className="dz-hint">MP4, MOV, WEBM — up to 50 MB.</div>
+          <button className="browse-btn" type="button" onClick={(e) => { e.stopPropagation(); inputRef.current?.click(); }}>Browse Video</button>
+          <input ref={inputRef} type="file" accept="video/*" hidden
+            onChange={(e) => { setNew(e.target.files?.[0]); e.target.value = ''; }} />
+        </div>
+      ) : (
+        <div style={{ marginTop: 12 }}>
+          <p>{file.name} <small>({formatSize(file.size)})</small></p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 8 }}>
+            <label>Start (s) <input type="number" min="0" step="0.5" value={start} onChange={(e) => setStart(Number(e.target.value))} style={{ width: 90 }} /></label>
+            <label>Duration (s) <input type="number" min="1" max="30" value={duration} onChange={(e) => setDuration(Number(e.target.value))} style={{ width: 90 }} /></label>
+            <label>Width (px) <input type="number" min="64" max="1280" value={width} onChange={(e) => setWidth(Number(e.target.value))} style={{ width: 90 }} /></label>
+          </div>
+          {outBlob && (
+            <div style={{ marginTop: 12 }}>
+              <img src={URL.createObjectURL(outBlob)} alt="GIF preview" style={{ maxWidth: '100%', borderRadius: 8 }} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {error && <div className="msg-err">{error}</div>}
+
+      {file && (
+        <div className="img-actions">
+          <button className="browse-btn" onClick={reset} disabled={busy}>Reset</button>
+          {outBlob ? (
+            <button className="primary-btn" onClick={() => triggerDownload(outBlob, outName)}>
+              <IconDownload size={14} /> Download GIF
+            </button>
+          ) : (
+            <button className="primary-btn" onClick={run} disabled={busy}>
+              {busy ? <><IconLoader size={14} className="spin" /> Rendering…</> : <><IconGif size={14} /> Make GIF</>}
+            </button>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+
+/* ── Translate ─────────────────────────────────────── */
+const TR_LANGS = [
+  { code: 'auto', label: 'Auto-detect' },
+  { code: 'en',   label: 'English' },
+  { code: 'km',   label: 'Khmer' },
+  { code: 'zh-CN', label: 'Chinese (Simplified)' },
+  { code: 'zh-TW', label: 'Chinese (Traditional)' },
+  { code: 'th',   label: 'Thai' },
+  { code: 'vi',   label: 'Vietnamese' },
+  { code: 'fr',   label: 'French' },
+  { code: 'es',   label: 'Spanish' },
+  { code: 'de',   label: 'German' },
+  { code: 'ja',   label: 'Japanese' },
+  { code: 'ko',   label: 'Korean' },
+];
+
+function TranslatePanel() {
+  const [text, setText] = useState('');
+  const [target, setTarget] = useState('km');
+  const [source, setSource] = useState('auto');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [out, setOut] = useState('');
+  const [engine, setEngine] = useState('');
+
+  const run = async () => {
+    if (!text.trim()) return;
+    setBusy(true); setError(''); setOut('');
+    try {
+      const r = await fetch(`${API_BASE}/translate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, target, source }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.detail || `Failed (${r.status})`);
+      setOut(j.text || ''); setEngine(j.engine || '');
+    } catch (e) { setError(e.message || String(e)); }
+    finally { setBusy(false); }
+  };
+
+  const copy = async () => {
+    if (!out) return;
+    try { await navigator.clipboard.writeText(out); } catch (_) {}
+  };
+
+  const swap = () => {
+    if (source === 'auto') return;
+    setSource(target); setTarget(source);
+    setText(out); setOut('');
+  };
+
+  return (
+    <>
+      <div className="head">
+        <div className="head-icon"><IconLanguage size={20} strokeWidth={2.25} /></div>
+        <div className="head-text">
+          <h2>Translate</h2>
+          <p>Translate text between languages. Up to 5,000 characters.</p>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'end', flexWrap: 'wrap', marginTop: 8 }}>
+        <label>From
+          <select value={source} onChange={(e) => setSource(e.target.value)} style={{ display: 'block', minWidth: 180 }}>
+            {TR_LANGS.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
+          </select>
+        </label>
+        <button className="ghost-btn" type="button" onClick={swap} disabled={source === 'auto'} title="Swap languages">⇄</button>
+        <label>To
+          <select value={target} onChange={(e) => setTarget(e.target.value)} style={{ display: 'block', minWidth: 180 }}>
+            {TR_LANGS.filter((l) => l.code !== 'auto').map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
+          </select>
+        </label>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+        <textarea value={text} onChange={(e) => setText(e.target.value)} rows={10}
+          placeholder="Type or paste text…" style={{ width: '100%', resize: 'vertical', padding: 8 }} />
+        <textarea value={out} readOnly rows={10}
+          placeholder={busy ? 'Translating…' : 'Translation appears here'} style={{ width: '100%', resize: 'vertical', padding: 8, background: 'rgba(127,127,127,0.06)' }} />
+      </div>
+      {error && <div className="msg-err">{error}</div>}
+      <div className="img-actions">
+        <button className="primary-btn" onClick={run} disabled={busy || !text.trim()}>
+          {busy ? <><IconLoader size={14} className="spin" /> Translating…</> : <><IconLanguage size={14} /> Translate</>}
+        </button>
+        {out && (
+          <button className="browse-btn" onClick={copy}><IconCopy size={14} /> Copy</button>
+        )}
+        {engine && <small style={{ alignSelf: 'center', opacity: 0.6 }}>via {engine}</small>}
+      </div>
+    </>
+  );
+}
+
 
 /* ── QR Generator ─────────────────────────────────────── */
 function QRPanel() {
