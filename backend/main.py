@@ -399,6 +399,28 @@ if _LOCAL_TESSDATA.is_dir():
 OCR_LANGS = {"eng", "khm", "eng+khm"}
 
 
+def _sniff_format(data: bytes) -> str:
+    head = data[:16]
+    if head.startswith(b"\xff\xd8\xff"): return "JPEG"
+    if head.startswith(b"\x89PNG\r\n\x1a\n"): return "PNG"
+    if head[:6] in (b"GIF87a", b"GIF89a"): return "GIF"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP": return "WebP"
+    if head[:2] == b"BM": return "BMP"
+    if head[:4] in (b"II*\x00", b"MM\x00*"): return "TIFF"
+    if data[4:8] == b"ftyp":
+        sub = data[8:12]
+        if sub in (b"heic", b"heix", b"hevc", b"hevx", b"mif1", b"msf1"):
+            return f"HEIC/HEIF ({sub.decode('ascii', 'replace')})"
+        if sub == b"avif":
+            return "AVIF"
+        return f"ISO-BMFF ({sub.decode('ascii', 'replace')})"
+    if head[:5] == b"<?xml" or head[:4] == b"<svg":
+        return "SVG (vector — not supported by OCR)"
+    if head[:4] == b"%PDF":
+        return "PDF (use /pdf, not /ocr)"
+    return f"unknown ({head[:8].hex()})"
+
+
 def _ocr_blocking(data: bytes, lang: str) -> str:
     import pytesseract
     if TESSERACT_BIN:
@@ -407,10 +429,10 @@ def _ocr_blocking(data: bytes, lang: str) -> str:
         img = Image.open(io.BytesIO(data))
         img.load()
     except Exception as e:
+        fmt = _sniff_format(data)
         raise RuntimeError(
-            f"Could not read image (PIL: {e}). "
-            "Supported: JPG / PNG / WEBP / GIF / BMP / TIFF / HEIC. "
-            "If this is HEIC/HEIF the server may need pillow-heif redeployed."
+            f"Could not read image. Detected: {fmt}. PIL: {e}. "
+            f"Supported: JPG / PNG / WEBP / GIF / BMP / TIFF / HEIC."
         )
     return pytesseract.image_to_string(img, lang=lang)
 
@@ -496,7 +518,6 @@ def health():
             "qr": "qrcode",
             "gif": "ffmpeg" if FFMPEG_DIR else "missing",
             "md2pdf": "libreoffice+markdown",
-            "translate": "google" if GOOGLE_TRANSLATE_KEY else "mymemory",
         },
         "workers": NUM_WORKERS,
         "chunk_timeout_sec": CHUNK_TIMEOUT_SEC,
@@ -1035,74 +1056,6 @@ async def doc_md2pdf(req: MarkdownReq):
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{safe_title}.pdf"'},
     )
-
-
-# ── Translate (Google API if key, else MyMemory free) ─
-class TranslateReq(BaseModel):
-    text: str
-    target: str = "en"
-    source: str = "auto"
-
-
-GOOGLE_TRANSLATE_KEY = os.environ.get("GOOGLE_TRANSLATE_API_KEY", "").strip()
-
-
-async def _translate_google(text: str, target: str, source: str) -> str:
-    import httpx
-    # Google v2: POST with form-urlencoded body. Using params would send POST
-    # with empty body and Google rejects with 403/411.
-    data = {"q": text, "target": target, "format": "text"}
-    if source and source != "auto":
-        data["source"] = source
-    async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.post(
-            "https://translation.googleapis.com/language/translate/v2",
-            params={"key": GOOGLE_TRANSLATE_KEY},
-            data=data,
-        )
-    if r.status_code != 200:
-        raise RuntimeError(f"Google API {r.status_code}: {r.text[:300]}")
-    return r.json()["data"]["translations"][0]["translatedText"]
-
-
-async def _translate_mymemory(text: str, target: str, source: str) -> str:
-    import httpx
-    pair = f"{source if source and source != 'auto' else 'auto'}|{target}"
-    async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.get("https://api.mymemory.translated.net/get",
-                             params={"q": text, "langpair": pair})
-    r.raise_for_status()
-    j = r.json()
-    if j.get("responseStatus") not in (200, "200"):
-        raise RuntimeError(j.get("responseDetails", "translate failed"))
-    return j["responseData"]["translatedText"]
-
-
-@app.post("/translate")
-async def translate(req: TranslateReq):
-    if not req.text.strip():
-        raise HTTPException(400, "text is required.")
-    if len(req.text) > 5000:
-        raise HTTPException(400, "text too long (max 5000 chars).")
-    engine = None
-    last_err = None
-    # Try Google first if a key is set; on failure (API not enabled / quota /
-    # billing) silently fall back to MyMemory so the endpoint stays usable.
-    if GOOGLE_TRANSLATE_KEY:
-        try:
-            translated = await _translate_google(req.text, req.target, req.source)
-            engine = "google"
-        except Exception as e:
-            last_err = e
-            log.warning("google translate failed, falling back: %s", e)
-    if engine is None:
-        try:
-            translated = await _translate_mymemory(req.text, req.target, req.source)
-            engine = "mymemory"
-        except Exception as e:
-            log.exception("translate failed")
-            raise HTTPException(500, f"{last_err or e}")
-    return {"text": translated, "engine": engine, "target": req.target, "source": req.source}
 
 
 # ── PDF endpoint (unchanged) ─────────────────────────

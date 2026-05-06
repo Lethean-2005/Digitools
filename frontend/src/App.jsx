@@ -215,13 +215,6 @@ const IconQR = (p) => (
     <path d="M14 14h3M20 14v3M14 17v3M17 17h3M14 21h3" />
   </Icon>
 );
-const IconLanguage = (p) => (
-  <Icon {...p}>
-    <path d="M4 5h7" /><path d="M9 3v2c0 4.418 -2.239 8 -5 8" />
-    <path d="M5 9c0 2.144 2.952 3.908 6.7 4" />
-    <path d="M12 20l4 -9l4 9" /><path d="M19.1 18h-6.2" />
-  </Icon>
-);
 const IconMd = (p) => (
   <Icon {...p}>
     <rect x="3" y="5" width="18" height="14" rx="2" />
@@ -260,7 +253,6 @@ const TOOLS = [
   { id: 'emoji',   label: 'Create Emoji',     desc: 'Make a 128/256/512 px emoji from an image', Icon: IconSparkles },
   { id: 'ocr',     label: 'Extract Text',     desc: 'Pull text out of any image (OCR)', Icon: IconText },
   { id: 'imgedit', label: 'Image Edit',       desc: 'Compress, resize, or convert',   Icon: IconResize },
-  { id: 'translate', label: 'Translate',      desc: 'Translate text between languages', Icon: IconLanguage },
   { id: 'qr',      label: 'QR Generator',     desc: 'Generate a QR code from text or URL', Icon: IconQR },
 ];
 
@@ -310,10 +302,9 @@ const SIDEBAR_GROUPS = [
         id: 'gen-group',
         label: 'Generators',
         Icon: IconSparkles,
-        badge: '2',
+        badge: '1',
         children: [
-          { id: 'qr',        label: 'QR Generator' },
-          { id: 'translate', label: 'Translate' },
+          { id: 'qr', label: 'QR Generator' },
         ],
       },
       { type: 'item', id: 'likes', label: 'Likes', Icon: IconHeart, soon: true },
@@ -341,7 +332,6 @@ const TAB_META = {
   ocr:       { title: 'Extract Text',      breadcrumb: ['Tools', 'Images'] },
   imgedit:   { title: 'Image Edit',        breadcrumb: ['Tools', 'Images'] },
   qr:        { title: 'QR Generator',      breadcrumb: ['Tools', 'Generators'] },
-  translate: { title: 'Translate',         breadcrumb: ['Tools', 'Generators'] },
 };
 
 export default function App() {
@@ -397,7 +387,6 @@ export default function App() {
               {tab === 'pdfedit'   && <PdfToolsPanel />}
               {tab === 'md'        && <MarkdownPdfPanel />}
               {tab === 'gif'       && <GifPanel />}
-              {tab === 'translate' && <TranslatePanel />}
               {tab === 'qr'     && <QRPanel />}
             </div>
           </div>
@@ -1472,101 +1461,6 @@ function GifPanel() {
           )}
         </div>
       )}
-    </>
-  );
-}
-
-
-/* ── Translate ─────────────────────────────────────── */
-const TR_LANGS = [
-  { code: 'auto', label: 'Auto-detect' },
-  { code: 'en',   label: 'English' },
-  { code: 'km',   label: 'Khmer' },
-  { code: 'zh-CN', label: 'Chinese (Simplified)' },
-  { code: 'zh-TW', label: 'Chinese (Traditional)' },
-  { code: 'th',   label: 'Thai' },
-  { code: 'vi',   label: 'Vietnamese' },
-  { code: 'fr',   label: 'French' },
-  { code: 'es',   label: 'Spanish' },
-  { code: 'de',   label: 'German' },
-  { code: 'ja',   label: 'Japanese' },
-  { code: 'ko',   label: 'Korean' },
-];
-
-function TranslatePanel() {
-  const [text, setText] = useState('');
-  const [target, setTarget] = useState('km');
-  const [source, setSource] = useState('auto');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [out, setOut] = useState('');
-  const [engine, setEngine] = useState('');
-
-  const run = async () => {
-    if (!text.trim()) return;
-    setBusy(true); setError(''); setOut('');
-    try {
-      const r = await fetch(`${API_BASE}/translate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, target, source }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.detail || `Failed (${r.status})`);
-      setOut(j.text || ''); setEngine(j.engine || '');
-    } catch (e) { setError(e.message || String(e)); }
-    finally { setBusy(false); }
-  };
-
-  const copy = async () => {
-    if (!out) return;
-    try { await navigator.clipboard.writeText(out); } catch (_) {}
-  };
-
-  const swap = () => {
-    if (source === 'auto') return;
-    setSource(target); setTarget(source);
-    setText(out); setOut('');
-  };
-
-  return (
-    <>
-      <div className="head">
-        <div className="head-icon"><IconLanguage size={20} strokeWidth={2.25} /></div>
-        <div className="head-text">
-          <h2>Translate</h2>
-          <p>Translate text between languages. Up to 5,000 characters.</p>
-        </div>
-      </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'end', flexWrap: 'wrap', marginTop: 8 }}>
-        <label>From
-          <select value={source} onChange={(e) => setSource(e.target.value)} style={{ display: 'block', minWidth: 180 }}>
-            {TR_LANGS.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
-          </select>
-        </label>
-        <button className="ghost-btn" type="button" onClick={swap} disabled={source === 'auto'} title="Swap languages">⇄</button>
-        <label>To
-          <select value={target} onChange={(e) => setTarget(e.target.value)} style={{ display: 'block', minWidth: 180 }}>
-            {TR_LANGS.filter((l) => l.code !== 'auto').map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
-          </select>
-        </label>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
-        <textarea value={text} onChange={(e) => setText(e.target.value)} rows={10}
-          placeholder="Type or paste text…" style={{ width: '100%', resize: 'vertical', padding: 8 }} />
-        <textarea value={out} readOnly rows={10}
-          placeholder={busy ? 'Translating…' : 'Translation appears here'} style={{ width: '100%', resize: 'vertical', padding: 8, background: 'rgba(127,127,127,0.06)' }} />
-      </div>
-      {error && <div className="msg-err">{error}</div>}
-      <div className="img-actions">
-        <button className="primary-btn" onClick={run} disabled={busy || !text.trim()}>
-          {busy ? <><IconLoader size={14} className="spin" /> Translating…</> : <><IconLanguage size={14} /> Translate</>}
-        </button>
-        {out && (
-          <button className="browse-btn" onClick={copy}><IconCopy size={14} /> Copy</button>
-        )}
-        {engine && <small style={{ alignSelf: 'center', opacity: 0.6 }}>via {engine}</small>}
-      </div>
     </>
   );
 }

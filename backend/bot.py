@@ -65,8 +65,7 @@ HELP_TEXT = (
     "• /qr <text>\n"
     "• /vid <url> | /aud <url>\n"
     "• /gif — attach video to make a 5s GIF\n"
-    "• /md2pdf <markdown> — render markdown to PDF\n"
-    "• /tr <lang> <text> — translate (e.g. /tr km hello)"
+    "• /md2pdf <markdown> — render markdown to PDF"
 )
 
 
@@ -314,28 +313,6 @@ async def cmd_pdf(update: Update, _ctx: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text("Just send me a PDF as a document — I'll convert it to DOCX.")
 
 
-async def cmd_tr(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not _allowed(update):
-        return await _deny(update)
-    args = ctx.args or []
-    if len(args) < 2:
-        return await update.effective_message.reply_text(
-            "Usage: /tr <lang> <text>\nExamples: /tr km Hello world  /tr en សួស្តី"
-        )
-    target = args[0].lower()
-    text = " ".join(args[1:])
-    msg = await update.effective_message.reply_text(f"Translating → {target}…")
-    try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            r = await client.post(f"{LOCAL_API}/translate",
-                                  json={"text": text, "target": target, "source": "auto"})
-        if r.status_code != 200:
-            return await _safe_edit(msg, f"Translate failed ({r.status_code}).")
-        await _safe_edit(msg, r.json().get("text", "(empty)")[:4000])
-    except Exception as e:
-        await _safe_edit(msg, f"Translate failed: {e}")
-
-
 async def cmd_md2pdf(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not _allowed(update):
         return await _deny(update)
@@ -570,7 +547,6 @@ _COMMANDS = [
     BotCommand("qr",       "Generate QR (/qr text)"),
     BotCommand("vid",      "Download video (/vid url)"),
     BotCommand("aud",      "Download audio (/aud url)"),
-    BotCommand("tr",       "Translate (/tr lang text)"),
 ]
 
 
@@ -591,7 +567,6 @@ def build_app(token: str):
     app.add_handler(CommandHandler("rmbg", cmd_rmbg))
     app.add_handler(CommandHandler("emoji", cmd_emoji))
     app.add_handler(CommandHandler("pdf", cmd_pdf))
-    app.add_handler(CommandHandler("tr", cmd_tr))
     app.add_handler(CommandHandler("md2pdf", cmd_md2pdf))
     app.add_handler(CommandHandler("compress", cmd_compress))
     app.add_handler(CommandHandler("resize", cmd_resize))
