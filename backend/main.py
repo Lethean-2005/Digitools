@@ -42,9 +42,10 @@ async def lifespan(_app):
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     if token:
         try:
-            from bot import build_app
+            from bot import build_app, register_commands
             _tg_app = build_app(token)
             await _tg_app.initialize()
+            await register_commands(_tg_app)
             await _tg_app.start()
             await _tg_app.updater.start_polling(drop_pending_updates=True)
             log.info("telegram bot polling started")
@@ -287,11 +288,17 @@ def _media_download_blocking(url: str, fmt: str, out_dir: Path) -> Path:
             }],
         })
     else:
+        # Format chain: prefer mp4 H.264 ≤1080p with separate audio, then any
+        # progressive mp4 ≤1080p, then any ≤1080p, then the absolute fallback
+        # `b` (yt-dlp's "best of whatever's there"). The trailing `b` is what
+        # rescues sites like Pinterest where the strict mp4/height filters
+        # match nothing.
         opts = _ydl({
             "format": (
-                "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/"
-                "best[ext=mp4][height<=1080]/"
-                "best[height<=1080]/best"
+                "bv*[ext=mp4][height<=1080]+ba[ext=m4a]/"
+                "b[ext=mp4][height<=1080]/"
+                "b[height<=1080]/"
+                "b"
             ),
             "outtmpl": str(out_dir / "%(title).200s.%(ext)s"),
             "restrictfilenames": True,
