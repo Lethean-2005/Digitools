@@ -233,7 +233,12 @@ async def _media(update: Update, ctx: ContextTypes.DEFAULT_TYPE, fmt: str):
                 json={"url": url, "format": fmt},
             )
         if r.status_code != 200:
-            return await msg.edit_text(f"Download failed ({r.status_code}).")
+            ct = r.headers.get("content-type", "")
+            try:
+                detail = r.json().get("detail", r.text) if ct.startswith("application/json") else r.text
+            except Exception:
+                detail = r.text
+            return await _safe_edit(msg, f"Download failed ({r.status_code}): {str(detail)[:500]}")
         if len(r.content) > TELEGRAM_OUTBOUND_LIMIT:
             return await msg.edit_text("Output is >50 MB; Telegram bots can't send that. Try a shorter clip.")
         cd = r.headers.get("content-disposition", "")
