@@ -71,6 +71,7 @@ async def lifespan(_app):
             await _tg_app.start()
 
             webhook_base = _resolve_webhook_base()
+            local_dev = os.environ.get("LOCAL_DEV", "").strip().lower() in ("1", "true", "yes")
             if webhook_base:
                 secret = os.environ.get("WEBHOOK_SECRET", "").strip()
                 if not secret:
@@ -88,12 +89,20 @@ async def lifespan(_app):
                 )
                 _tg_mode = "webhook"
                 log.info("telegram bot webhook registered: %s", webhook_url)
-            else:
+            elif local_dev:
                 # Local dev fallback: clear any previous webhook, then long-poll.
+                # Opt-in only (LOCAL_DEV=1) so an accidental run never wipes the
+                # production webhook.
                 await _tg_app.bot.delete_webhook(drop_pending_updates=True)
                 await _tg_app.updater.start_polling(drop_pending_updates=True)
                 _tg_mode = "polling"
-                log.info("telegram bot polling started")
+                log.info("telegram bot polling started (LOCAL_DEV)")
+            else:
+                raise RuntimeError(
+                    "Telegram bot has no webhook base URL and LOCAL_DEV is not set. "
+                    "Set WEBHOOK_BASE_URL (or RENDER_EXTERNAL_URL) for webhook mode, "
+                    "or LOCAL_DEV=1 to opt into local polling."
+                )
         except Exception:
             log.exception("telegram bot failed to start")
             _tg_app = None
