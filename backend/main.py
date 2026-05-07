@@ -21,12 +21,13 @@ import fitz  # PyMuPDF
 import yt_dlp
 from docx import Document
 from docxcompose.composer import Composer
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from PIL import Image
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
+from telegram import Update
 
 # Register HEIC/HEIF support so iPhone photos work in OCR / compress / resize / etc.
 try:
@@ -43,11 +44,23 @@ logging.basicConfig(
 log = logging.getLogger("converter")
 
 _tg_app = None
+_tg_mode: str | None = None  # "webhook" | "polling" | None
+_tg_webhook_secret: str = ""
+
+TELEGRAM_WEBHOOK_PATH = "/telegram/webhook"
+
+
+def _resolve_webhook_base() -> str:
+    # Explicit override wins; fall back to Render's auto-injected URL.
+    base = os.environ.get("WEBHOOK_BASE_URL", "").strip()
+    if not base:
+        base = os.environ.get("RENDER_EXTERNAL_URL", "").strip()
+    return base.rstrip("/")
 
 
 @asynccontextmanager
 async def lifespan(_app):
-    global _tg_app
+    global _tg_app, _tg_mode, _tg_webhook_secret
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
     if token:
         try:
@@ -56,11 +69,35 @@ async def lifespan(_app):
             await _tg_app.initialize()
             await register_commands(_tg_app)
             await _tg_app.start()
-            await _tg_app.updater.start_polling(drop_pending_updates=True)
-            log.info("telegram bot polling started")
+
+            webhook_base = _resolve_webhook_base()
+            if webhook_base:
+                secret = os.environ.get("WEBHOOK_SECRET", "").strip()
+                if not secret:
+                    raise RuntimeError(
+                        "WEBHOOK_SECRET is required when running in webhook mode "
+                        "(WEBHOOK_BASE_URL or RENDER_EXTERNAL_URL is set)."
+                    )
+                _tg_webhook_secret = secret
+                webhook_url = f"{webhook_base}{TELEGRAM_WEBHOOK_PATH}"
+                await _tg_app.bot.set_webhook(
+                    url=webhook_url,
+                    secret_token=secret,
+                    drop_pending_updates=True,
+                    allowed_updates=Update.ALL_TYPES,
+                )
+                _tg_mode = "webhook"
+                log.info("telegram bot webhook registered: %s", webhook_url)
+            else:
+                # Local dev fallback: clear any previous webhook, then long-poll.
+                await _tg_app.bot.delete_webhook(drop_pending_updates=True)
+                await _tg_app.updater.start_polling(drop_pending_updates=True)
+                _tg_mode = "polling"
+                log.info("telegram bot polling started")
         except Exception:
             log.exception("telegram bot failed to start")
             _tg_app = None
+            _tg_mode = None
     else:
         log.info("TELEGRAM_BOT_TOKEN unset — bot disabled")
     try:
@@ -68,7 +105,13 @@ async def lifespan(_app):
     finally:
         if _tg_app:
             try:
-                await _tg_app.updater.stop()
+                if _tg_mode == "polling":
+                    await _tg_app.updater.stop()
+                elif _tg_mode == "webhook":
+                    # Leave the webhook registered — Telegram will keep delivering
+                    # to the new instance Render spins up. Deleting here would
+                    # cause downtime during rolling restarts.
+                    pass
                 await _tg_app.stop()
                 await _tg_app.shutdown()
                 log.info("telegram bot stopped")
@@ -572,6 +615,21 @@ def root():
      <code>POST /qr</code>.</p>
 </body>
 </html>"""
+
+
+@app.post(TELEGRAM_WEBHOOK_PATH)
+async def telegram_webhook(request: Request):
+    if _tg_app is None or _tg_mode != "webhook":
+        raise HTTPException(503, "Telegram webhook not active.")
+    if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != _tg_webhook_secret:
+        raise HTTPException(403, "Forbidden.")
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(400, "Invalid JSON.")
+    update = Update.de_json(payload, _tg_app.bot)
+    await _tg_app.process_update(update)
+    return {"ok": True}
 
 
 @app.get("/health")

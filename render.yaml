@@ -30,6 +30,15 @@ services:
         value: 0.0.0.0
       - key: PORT
         value: "8001"
+      # Telegram bot credentials — set in the Render dashboard.
+      # WEBHOOK_BASE_URL is optional: if unset, RENDER_EXTERNAL_URL is used.
+      # WEBHOOK_SECRET is required for webhook mode (any random string).
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_OWNER_CHAT_ID
+        sync: false
+      - key: WEBHOOK_SECRET
+        sync: false
     disk:
       name: u2net-cache
       mountPath: /root/.u2net
